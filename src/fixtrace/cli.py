@@ -6,7 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from fixtrace.core.models import AnalysisRequest, ExecutionMode, VerificationStatus
+from fixtrace.core.models import AgentMode, AnalysisRequest, ExecutionMode, VerificationStatus
 from fixtrace.core.pipeline import AnalysisPipeline
 
 
@@ -37,6 +37,17 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Execute pytest locally in a copied workspace; use only for trusted repositories",
     )
+    agent_policy = analyze.add_mutually_exclusive_group()
+    agent_policy.add_argument(
+        "--no-agent",
+        action="store_true",
+        help="Skip LLM investigation and return only deterministic evidence",
+    )
+    agent_policy.add_argument(
+        "--require-agent",
+        action="store_true",
+        help="Fail unless the configured LLM agent reaches an evidence-cited conclusion",
+    )
     analyze.add_argument("--json", action="store_true", help="Print the full JSON result")
     analyze.add_argument("--output", type=Path, help="Write the Markdown report to this path")
 
@@ -58,17 +69,26 @@ def main(argv: list[str] | None = None) -> int:
             failure_output = _read(args.failure_file)
             verification_output = _read(args.verification_file)
             mode = ExecutionMode.LOCAL if args.execute else ExecutionMode.INSPECT
+            agent_mode = (
+                AgentMode.REQUIRED
+                if args.require_agent
+                else AgentMode.OFF
+                if args.no_agent
+                else AgentMode.AUTO
+            )
             request = AnalysisRequest(
                 repository=args.repository,
                 failure_output=failure_output,
                 verification_output=verification_output,
                 execution_mode=mode,
+                agent_mode=agent_mode,
             )
             allow_execution = args.execute
         else:
             request = AnalysisRequest(
                 failure_output=_read(args.before),
                 verification_output=_read(args.after),
+                agent_mode=AgentMode.OFF,
             )
             allow_execution = False
         pipeline = AnalysisPipeline(

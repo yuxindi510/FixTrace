@@ -7,6 +7,11 @@ services:
       FIXTRACE_ALLOW_LOCAL_EXECUTION: "0"
       FIXTRACE_ALLOW_LOCAL_SOURCES: "0"
       FIXTRACE_WORK_ROOT: /tmp/fixtrace-workspaces
+      FIXTRACE_LLM_PROVIDER: ${FIXTRACE_LLM_PROVIDER:-disabled}
+      FIXTRACE_LLM_MODEL: ${FIXTRACE_LLM_MODEL:-}
+      FIXTRACE_LLM_BASE_URL: ${FIXTRACE_LLM_BASE_URL:-https://api.openai.com/v1}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      FIXTRACE_AGENT_MAX_STEPS: ${FIXTRACE_AGENT_MAX_STEPS:-6}
     read_only: true
     tmpfs:
       - /tmp:size=512m

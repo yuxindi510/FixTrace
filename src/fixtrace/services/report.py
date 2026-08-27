@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Literal
 
 from fixtrace.core.models import (
+    AgentInvestigation,
     AnalysisReport,
     CommandResult,
     Evidence,
@@ -33,6 +34,7 @@ class ReportRenderer:
         evidence: list[Evidence],
         hypotheses: list[Hypothesis],
         incident: IncidentProfile,
+        agent: AgentInvestigation,
         verification: VerificationResult,
     ) -> AnalysisReport:
         verdict = self._verdict(execution_mode, command_result, failures, verification)
@@ -116,6 +118,63 @@ class ReportRenderer:
         else:
             lines.append("Insufficient failure evidence for a root-cause hypothesis.")
 
+        lines.extend(
+            [
+                "",
+                "## Agent investigation",
+                "",
+                f"Status: **{agent.status.value}**",
+                "",
+            ]
+        )
+        if agent.provider != "none":
+            lines.append(f"Provider/model: `{agent.provider}` / `{agent.model}`")
+            lines.append("")
+        lines.append(
+            self._agent_text(agent.summary) or "No LLM investigation summary is available."
+        )
+        if agent.findings:
+            lines.extend(["", "### Evidence-cited findings", ""])
+            for finding in agent.findings:
+                citations = finding.evidence_ids + finding.observation_ids
+                lines.extend(
+                    [
+                        f"#### {self._agent_text(finding.title)} ({finding.confidence:.0%})",
+                        "",
+                        self._agent_text(finding.explanation),
+                        "",
+                        f"Citations: `{', '.join(citations)}`",
+                        "",
+                    ]
+                )
+                for action in finding.next_actions:
+                    lines.append(f"- {self._agent_text(action)}")
+        if agent.steps:
+            lines.extend(["", "### Agent trace", ""])
+            for step in agent.steps:
+                observation = f" → `{step.observation_id}`" if step.observation_id else ""
+                lines.append(
+                    f"- Step {step.index}: `{step.action}`{observation} — "
+                    f"{self._agent_text(step.reason)}"
+                )
+        if agent.observations:
+            lines.extend(["", "### Agent observation ledger", ""])
+            for observation in agent.observations:
+                outcome = "ok" if observation.ok else "rejected"
+                lines.extend(
+                    [
+                        f"#### `{observation.id}` · `{observation.tool}` · {outcome}",
+                        "",
+                        self._agent_text(observation.summary),
+                        "",
+                    ]
+                )
+                lines.extend(
+                    f"    {self._agent_text(line)}"
+                    for line in observation.detail[:2_000].splitlines()
+                )
+                lines.append("")
+
         lines.extend(["", "## Evidence ledger", ""])
         for item in evidence:
             lines.append(
@@ -163,6 +222,7 @@ class ReportRenderer:
             evidence=evidence,
             hypotheses=hypotheses,
             incident=incident,
+            agent=agent,
             verification=verification,
             verdict=verdict,
             markdown=markdown,
@@ -190,3 +250,7 @@ class ReportRenderer:
         if execution_mode == ExecutionMode.INSPECT and failures:
             return "failure evidence parsed"
         return "insufficient failure evidence"
+
+    @staticmethod
+    def _agent_text(value: str) -> str:
+        return value.replace("\r", "").replace("<", "&lt;").replace(">", "&gt;")

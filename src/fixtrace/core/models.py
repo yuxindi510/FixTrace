@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Literal, Self
+from typing import Any, Literal, Self
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -16,6 +16,20 @@ def utc_now() -> datetime:
 class ExecutionMode(StrEnum):
     INSPECT = "inspect"
     LOCAL = "local"
+
+
+class AgentMode(StrEnum):
+    AUTO = "auto"
+    OFF = "off"
+    REQUIRED = "required"
+
+
+class AgentStatus(StrEnum):
+    DISABLED = "disabled"
+    NOT_CONFIGURED = "not_configured"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    MAX_STEPS = "max_steps"
 
 
 class TaskStatus(StrEnum):
@@ -56,6 +70,7 @@ class StageName(StrEnum):
     DETECT = "detect"
     REPRODUCE = "reproduce"
     DIAGNOSE = "diagnose"
+    INVESTIGATE = "investigate"
     VERIFY = "verify"
     REPORT = "report"
 
@@ -85,6 +100,7 @@ class AnalysisRequest(BaseModel):
         description="Optional after-fix output used to prove whether the failure was resolved.",
     )
     execution_mode: ExecutionMode = ExecutionMode.INSPECT
+    agent_mode: AgentMode = AgentMode.AUTO
 
     @model_validator(mode="after")
     def require_repository_or_failure(self) -> Self:
@@ -181,6 +197,43 @@ class IncidentProfile(BaseModel):
     playbook: list[str] = Field(default_factory=list)
 
 
+class AgentStep(BaseModel):
+    index: int = Field(ge=1)
+    action: str
+    reason: str
+    arguments: dict[str, Any] = Field(default_factory=dict)
+    observation_id: str | None = None
+
+
+class AgentObservation(BaseModel):
+    id: str
+    tool: str
+    ok: bool = True
+    summary: str
+    detail: str = ""
+
+
+class AgentFinding(BaseModel):
+    title: str
+    explanation: str
+    confidence: float = Field(ge=0.0, le=1.0)
+    evidence_ids: list[str] = Field(default_factory=list)
+    observation_ids: list[str] = Field(default_factory=list)
+    next_actions: list[str] = Field(default_factory=list)
+
+
+class AgentInvestigation(BaseModel):
+    status: AgentStatus
+    provider: str = "none"
+    model: str = "none"
+    summary: str = ""
+    steps: list[AgentStep] = Field(default_factory=list)
+    observations: list[AgentObservation] = Field(default_factory=list)
+    findings: list[AgentFinding] = Field(default_factory=list)
+    model_calls: int = Field(default=0, ge=0)
+    error: str | None = None
+
+
 class AnalysisReport(BaseModel):
     repository: str
     source_kind: Literal["local", "github", "log"]
@@ -193,6 +246,7 @@ class AnalysisReport(BaseModel):
     evidence: list[Evidence] = Field(default_factory=list)
     hypotheses: list[Hypothesis] = Field(default_factory=list)
     incident: IncidentProfile = Field(default_factory=IncidentProfile)
+    agent: AgentInvestigation
     verification: VerificationResult = Field(default_factory=VerificationResult)
     verdict: str
     markdown: str

@@ -24,7 +24,7 @@ static_root = Path(__file__).resolve().parent.parent / "static"
 app = FastAPI(
     title="FixTrace",
     version=__version__,
-    description="Privacy-first software incident triage and before/after verification.",
+    description="Evidence-grounded software investigation agent and recovery verification.",
 )
 
 
@@ -76,6 +76,13 @@ def health() -> dict[str, object]:
         "incident_domains": 9,
         "repair_verification": True,
         "secret_redaction": True,
+        "agent": {
+            "configured": settings.llm_configured,
+            "provider": settings.llm_provider,
+            "model": settings.llm_model or None,
+            "max_steps": settings.agent_max_steps,
+            "read_only_tools": True,
+        },
     }
 
 

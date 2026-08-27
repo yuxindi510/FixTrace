@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "fixtrace"
-version = "0.3.0"
-description = "Privacy-first software incident triage and repair verification"
+version = "0.4.0"
+description = "Evidence-grounded software investigation agent and repair verification"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }

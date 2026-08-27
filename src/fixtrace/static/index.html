@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>FixTrace — software incident evidence you can prove</title>
+  <title>FixTrace — an evidence-grounded software investigation agent</title>
   <style>
     :root {
       color-scheme: dark;
@@ -115,11 +115,11 @@
     </header>
     <section class="hero">
       <div>
-        <div class="eyebrow">Privacy-first incident intelligence</div>
-        <h1>Any software issue.<br>One evidence trail.</h1>
-        <p>Triage tests, APIs, databases, containers, dependencies, builds, and application crashes—then prove recovery with before/after evidence.</p>
+        <div class="eyebrow">Evidence-grounded investigation agent</div>
+        <h1>An agent that investigates.<br>Evidence that proves.</h1>
+        <p>The LLM plans, reads evidence, and inspects source through bounded tools. FixTrace keeps every conclusion traceable and verifies recovery independently.</p>
       </div>
-      <div class="metric"><strong>9 domains</strong><span>one deterministic investigation flow</span></div>
+      <div class="metric"><strong>Agent + proof</strong><span>reasoning without surrendering verification</span></div>
     </section>
     <section class="grid">
       <article class="panel">
@@ -134,6 +134,11 @@
             <label for="mode">Execution policy</label>
             <select id="mode"><option value="inspect">Inspect supplied output (safe default)</option><option value="local">Run pytest locally (trusted deployments only)</option></select>
             <div class="hint">Remote code execution is disabled unless the server owner explicitly enables it.</div>
+          </div>
+          <div class="field">
+            <label for="agent-mode">Agent policy</label>
+            <select id="agent-mode"><option value="auto">Use configured LLM agent (recommended)</option><option value="required">Require an agent conclusion</option><option value="off">Deterministic evidence only</option></select>
+            <div class="hint">Credentials stay in server environment variables; logs are redacted before model calls.</div>
           </div>
           <div class="field">
             <label for="failure">Before — incident or failure log</label>
@@ -157,6 +162,7 @@
           <div class="content">
             <div class="section-title">Pipeline</div><div class="timeline" id="timeline"></div>
             <div class="section-title">Incident triage</div><div class="cards" id="incident"></div>
+            <div class="section-title">Agent investigation</div><div class="cards" id="agent"></div>
             <div class="section-title">Repair verification</div><div class="cards" id="verification-result"></div>
             <div class="section-title">Root-cause hypotheses</div><div class="cards" id="hypotheses"></div>
             <div class="section-title">Evidence ledger</div><div class="cards" id="evidence"></div>
@@ -172,20 +178,21 @@
     let pollTimer;
 
     async function checkHealth() {
-      try { const data = await fetch('/api/health').then(r => r.json()); $('health').textContent = `service online · v${data.version}`; }
+      try { const data = await fetch('/api/health').then(r => r.json()); const agent = data.agent.configured ? `agent ${data.agent.model}` : 'agent not configured'; $('health').textContent = `service online · v${data.version} · ${agent}`; }
       catch { $('health').textContent = 'service unavailable'; $('health').classList.add('error'); }
     }
 
     $('demo').addEventListener('click', () => {
       $('repository').value = '';
       $('mode').value = 'inspect';
+      $('agent-mode').value = 'auto';
       $('failure').value = `2026-08-27T08:12:03Z ERROR checkout-api upstream request failed\nGET /api/checkout\nHTTP/1.1 503 Service Unavailable\ntrace_id=req-demo-42\ntimeout after 5s`;
       $('verification').value = `2026-08-27T08:18:11Z INFO checkout-api request succeeded\nGET /api/checkout\nHTTP/1.1 200 OK\nhealth check passed`;
     });
 
     $('analysis-form').addEventListener('submit', async (event) => {
       event.preventDefault(); clearTimeout(pollTimer); $('submit').disabled = true;
-      const payload = { repository: $('repository').value.trim() || null, execution_mode: $('mode').value, failure_output: $('failure').value, verification_output: $('verification').value };
+      const payload = { repository: $('repository').value.trim() || null, execution_mode: $('mode').value, agent_mode: $('agent-mode').value, failure_output: $('failure').value, verification_output: $('verification').value };
       try {
         const response = await fetch('/api/analyses', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
         if (!response.ok) throw new Error((await response.json()).detail || 'Unable to start analysis');
@@ -218,6 +225,10 @@
       const signals = report.incident.signals.map(item => `${escapeHtml(item.label)}: ${escapeHtml(item.detail)}`).join(' · ') || 'Add surrounding context to extract more signals.';
       const actions = report.incident.playbook.map((item, index) => `${index + 1}. ${escapeHtml(item)}`).join('<br>');
       $('incident').innerHTML = `<div class="card"><div class="card-top"><strong>${escapeHtml(report.incident.title)}</strong><small>${escapeHtml(report.incident.severity)}</small></div><p>${signals}<br><br>${actions}</p></div>`;
+      const agentFindings = report.agent.findings.map(item => { const citations = [...item.evidence_ids, ...item.observation_ids].join(', '); const next = item.next_actions.map(action => `Next: ${escapeHtml(action)}`).join('<br>'); return `<div class="card"><div class="card-top"><strong>${escapeHtml(item.title)}</strong><small>${Math.round(item.confidence*100)}%</small></div><p>${escapeHtml(item.explanation)}<br><br>Citations: ${escapeHtml(citations)}<br>${next}</p></div>`; }).join('');
+      const trace = report.agent.steps.map(item => `${item.index}. ${escapeHtml(item.action)}${item.observation_id ? ` → ${escapeHtml(item.observation_id)}` : ''}: ${escapeHtml(item.reason)}`).join('<br>');
+      const observations = report.agent.observations.map(item => `<div class="card"><div class="card-top"><strong>${escapeHtml(item.id)} · ${escapeHtml(item.tool)}</strong><small>${item.ok ? 'OBSERVED' : 'REJECTED'}</small></div><p>${escapeHtml(item.summary)}<br>${escapeHtml(item.detail.slice(0, 1200))}</p></div>`).join('');
+      $('agent').innerHTML = `<div class="card"><div class="card-top"><strong>${escapeHtml(report.agent.status)}</strong><small>${escapeHtml(report.agent.model)}</small></div><p>${escapeHtml(report.agent.summary)}${trace ? `<br><br>${trace}` : ''}</p></div>${agentFindings}${observations}`;
       $('verification-result').innerHTML = `<div class="card"><div class="card-top"><strong>${escapeHtml(report.verification.status)}</strong><small>${report.verification.pass_signal ? 'PASS SIGNAL' : 'EVIDENCE CHECK'}</small></div><p>${escapeHtml(report.verification.summary)}</p></div>`;
       $('hypotheses').innerHTML = report.hypotheses.map(item => `<div class="card"><div class="card-top"><strong>${escapeHtml(item.title)}</strong><small>${Math.round(item.confidence*100)}%</small></div><p>${escapeHtml(item.explanation)} Next: ${escapeHtml(item.next_action)}</p></div>`).join('') || '<div class="card"><p>No hypothesis yet. Supply a complete failure trace.</p></div>';
       $('evidence').innerHTML = report.evidence.map(item => `<div class="card"><div class="card-top"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.id)}</small></div><p>${escapeHtml(item.detail)}</p></div>`).join('');

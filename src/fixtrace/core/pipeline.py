@@ -4,8 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from fixtrace.agent.provider import AgentModel, build_agent_model
+from fixtrace.agent.runtime import AgentRunner
 from fixtrace.core.config import Settings
 from fixtrace.core.models import (
+    AgentInvestigation,
+    AgentMode,
+    AgentStatus,
     AnalysisReport,
     AnalysisRequest,
     ExecutionMode,
@@ -32,6 +37,7 @@ class AnalysisPipeline:
         *,
         allow_local_execution: bool | None = None,
         allow_local_sources: bool | None = None,
+        agent_model: AgentModel | None = None,
     ) -> None:
         self.settings = settings or Settings.from_env()
         execution_enabled = (
@@ -60,6 +66,12 @@ class AnalysisPipeline:
         self.incidents = IncidentClassifier()
         self.diagnoser = EvidenceDiagnoser()
         self.renderer = ReportRenderer()
+        self.agent = AgentRunner(
+            agent_model or build_agent_model(self.settings),
+            max_steps=self.settings.agent_max_steps,
+            max_tool_output_chars=self.settings.agent_max_tool_output_chars,
+            redactor=self.redactor,
+        )
 
     def run(
         self,
@@ -143,9 +155,48 @@ class AnalysisPipeline:
 
             verification = self.verifier.verify(failures, clean_verification.text)
             if request.verification_output.strip():
-                evidence.append(
-                    self.diagnoser.verification_evidence(verification)
+                evidence.append(self.diagnoser.verification_evidence(verification))
+            self._stage(
+                emit,
+                StageName.INVESTIGATE,
+                "started",
+                "Starting bounded LLM investigation with read-only tools.",
+            )
+            if request.agent_mode == AgentMode.OFF:
+                agent = AgentInvestigation(
+                    status=AgentStatus.DISABLED,
+                    summary="LLM investigation was disabled for this request.",
                 )
+            else:
+                agent = self.agent.run(
+                    repository_root=checkout.path,
+                    repository=checkout.display_name,
+                    stack=stack,
+                    incident=incident,
+                    failures=failures,
+                    evidence=evidence,
+                    failure_output=output,
+                    verification=verification,
+                )
+            if agent.status == AgentStatus.COMPLETED:
+                self._stage(
+                    emit,
+                    StageName.INVESTIGATE,
+                    "completed",
+                    f"Agent completed {agent.model_calls} model calls and produced "
+                    f"{len(agent.findings)} evidence-cited findings.",
+                )
+            elif agent.status in {AgentStatus.DISABLED, AgentStatus.NOT_CONFIGURED}:
+                self._stage(emit, StageName.INVESTIGATE, "skipped", agent.summary)
+            else:
+                self._stage(emit, StageName.INVESTIGATE, "failed", agent.summary)
+            if request.agent_mode == AgentMode.REQUIRED and agent.status != AgentStatus.COMPLETED:
+                raise RuntimeError(
+                    "Agent investigation was required but did not complete: "
+                    f"{agent.status.value}."
+                )
+
+            if request.verification_output.strip():
                 self._stage(
                     emit,
                     StageName.VERIFY,
@@ -172,6 +223,7 @@ class AnalysisPipeline:
                 evidence=evidence,
                 hypotheses=hypotheses,
                 incident=incident,
+                agent=agent,
                 verification=verification,
             )
             self._stage(emit, StageName.REPORT, "completed", "Analysis report is ready.")

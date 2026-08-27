@@ -24,6 +24,19 @@ before parsing and reporting logs. This is a safety net, not a complete secret s
 credential formats and sensitive business data may remain. Avoid pasting secrets, never commit a
 local `.env`, and review reports before publishing them.
 
+## LLM data boundary
+
+When `FIXTRACE_LLM_PROVIDER=openai` is configured, the sanitized incident context and sanitized
+outputs from read-only repository tools are sent to the configured Responses API endpoint. Provider
+credentials are loaded only from server environment variables and are not accepted in analysis
+requests, stored in tasks, or rendered in reports. FixTrace sends `store: false`, but the endpoint's
+own data-handling terms still apply.
+
+The built-in agent cannot run shell commands, write files, make network requests, or escape the
+prepared repository root. Tool outputs and model calls are capped. These controls reduce risk but do
+not guarantee that all confidential business information has been removed; review your deployment's
+data policy before enabling a hosted model.
+
 ## Reporting a vulnerability
 
 Open a private security advisory in the GitHub repository rather than a public issue. Include a

@@ -1,89 +1,94 @@
 # FixTrace
 
-> **隐私优先的软件事件调查与恢复验证。**<br>
-> **Privacy-first software incident triage and recovery verification.**
+> **会主动查证据、读源码，并用真实结果验证修复的软件故障调查 Agent。**<br>
+> **A software incident investigation agent that gathers evidence, inspects source, and verifies recovery with real results.**
 
-FixTrace 将杂乱的 API、数据库、容器、依赖、构建、测试、部署和应用日志转换成可审计的调查记录。它会在本地脱敏敏感信息、判断事件类型、提取运行信号、生成稳定的故障指纹和场景化排查清单，并通过修复前后的输出判断系统是否真正恢复。
+FixTrace 面向测试、API、数据库、容器、依赖、构建、部署和应用运行时故障。LLM 在有边界的循环中规划下一步并调用只读工具；确定性引擎负责日志解析、本地脱敏、稳定指纹和修复前后验证。最终结论必须引用证据 ID 或工具观察 ID，模型不能自行把修复标记为成功。
 
-FixTrace turns noisy API, database, container, dependency, build, test, deployment, and application logs into an auditable investigation record. It locally redacts sensitive data, classifies the incident, extracts operational signals, creates stable failure fingerprints and scenario-specific playbooks, then compares before/after runs to decide whether recovery is proven.
-
-**纯日志分析无需代码仓库，也不需要 AI API。**<br>
-**Log-only analysis requires neither a repository nor an AI API.**
+FixTrace investigates failures across tests, APIs, databases, containers, dependencies, builds, deployments, and application runtimes. An LLM plans each next step and calls bounded read-only tools, while deterministic components handle parsing, local redaction, stable fingerprints, and before/after verification. Every agent finding must cite an evidence or observation ID, and the model cannot declare a repair verified by itself.
 
 ![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB)
 ![FastAPI](https://img.shields.io/badge/API-FastAPI-009688)
 ![License](https://img.shields.io/badge/license-MIT-75f0bd)
 
-## 为什么不只使用编程智能体？ / Why not only use a coding agent?
+## 为什么它不等于“直接使用 Codex”？ / Why not just use Codex?
 
-Codex 等编程智能体擅长交互式分析和修改代码。FixTrace 负责工作流中的另一个环节：可重复的故障接收、结构化证据和机器可检查的恢复验证。
+Codex 是通用编程智能体，适合在一个开发会话中理解、修改和运行代码。FixTrace 是可以嵌入支持平台、值班流程、内部工具和自动化任务的专用故障调查 Agent。
 
-Coding agents such as Codex excel at interactive reasoning and code changes. FixTrace handles a different part of the workflow: repeatable failure intake, structured evidence, and machine-checkable recovery verification.
+Codex is a general coding agent for understanding, changing, and running code in a development session. FixTrace is a specialized incident agent designed to sit inside support platforms, on-call workflows, internal tools, and unattended jobs.
 
-| 对比维度 / Dimension | 编程智能体 / Coding agent | FixTrace |
+| 对比维度 / Dimension | 通用编程智能体 / General coding agent | FixTrace |
 |---|---|---|
-| 工作方式 / Workflow | 交互式推理与代码修改<br>Interactive reasoning and code changes | 无人值守、确定性的日志处理<br>Unattended, deterministic log processing |
-| 输出 / Output | 回答一次对话<br>Answers one conversation | 生成可移植证据和稳定指纹<br>Produces portable evidence and stable fingerprints |
-| 一致性 / Consistency | 结果依赖提示词和上下文<br>Depends on prompt and context | 在脚本、支持流程和 CI 中执行相同规则<br>Applies the same rules in scripts, support workflows, and CI |
-| 修复判断 / Repair decision | 可以提出合理的修复方案<br>Can propose a plausible repair | 只有前后证据满足条件才会标记为 `verified`<br>Requires before/after evidence before saying `verified` |
-| 隐私 / Privacy | 可能使用托管模型<br>May use a hosted model | 核心分析完全在本地运行<br>Core analysis runs locally without sending logs to a model |
+| 目标 / Purpose | 开放式软件开发任务<br>Open-ended software work | 可重复的软件故障调查<br>Repeatable software incident investigation |
+| Agent 循环 / Agent loop | 工具和流程随会话变化<br>Tools and flow vary by session | 固定的观察→规划→工具→观察闭环<br>Bounded observe→plan→tool→observe loop |
+| 工具权限 / Tool authority | 可修改代码并执行命令<br>May edit code and execute commands | 默认只有证据、列文件、搜源码、读源码四类只读工具<br>Four read-only tools by default: evidence, list, search, read |
+| 可追溯性 / Traceability | 以对话记录为主<br>Primarily conversational history | 每个结论必须引用 `ev-*` / `obs-*`<br>Every finding must cite `ev-*` / `obs-*` |
+| 隐私边界 / Privacy boundary | 取决于会话与配置<br>Depends on session and configuration | 日志和工具输出先本地脱敏，再发给模型<br>Logs and tool outputs are locally redacted before model calls |
+| 修复判断 / Recovery decision | 模型可以给出判断<br>The model may offer a judgment | 只有确定性前后指纹检查能输出 `verified`<br>Only deterministic before/after checks can output `verified` |
+| 集成方式 / Integration | 交互式开发界面<br>Interactive development interface | CLI、异步 API、Web 控制台、Markdown/JSON 报告<br>CLI, async API, Web UI, Markdown/JSON reports |
 
-两者可以协同工作：FixTrace 准备经过脱敏的结构化证据，开发者或编程智能体负责调查和修改代码，最后由 FixTrace 充当恢复验证门禁。
+FixTrace 的优势不是比通用 Agent “更聪明”，而是把故障调查做成可复用、可审计、权限受限、结果可验证的产品流程。
 
-They work well together: FixTrace prepares sanitized, structured evidence; a developer or coding agent investigates and changes the code; FixTrace then acts as the recovery verification gate.
+FixTrace does not try to be “smarter” than a general agent. Its advantage is turning incident investigation into a reusable, auditable, least-authority, independently verifiable product workflow.
 
-## v0.3 已支持 / What works in v0.3
+## v0.4 Agent 架构 / v0.4 agent architecture
 
-- 无需克隆或运行代码，直接分析粘贴的日志。<br>
-  Analyze pasted logs without cloning or executing a repository.
-- 识别九类软件事件：测试、构建、依赖、API/网络、数据库、容器/平台、配置、应用运行时和未知事件。<br>
-  Classify nine incident domains: tests, builds, dependencies, API/network, databases, containers/platforms, configuration, application runtime, and unknown events.
-- 支持 pytest、Jest/Vitest、Go test、Maven/Gradle、HTTP、数据库、容器终止、依赖解析、编译器和通用应用日志。<br>
-  Detect pytest, Jest/Vitest, Go test, Maven/Gradle, HTTP, database, container, dependency, compiler, and generic application failures.
-- 提取 HTTP 状态、平台原因、数据库代码、源码位置、时间戳、追踪上下文、故障数量和超时信号。<br>
-  Extract HTTP statuses, platform reasons, database codes, source locations, timestamps, trace context, failure counts, and timeout signals.
-- 生成严重程度和针对具体场景的首轮排查清单。<br>
-  Produce a severity label and a domain-specific first-response playbook.
-- 在任务存储和报告前脱敏 Token、API Key、密码、Bearer 凭据、私钥和追踪标识符。<br>
-  Redact tokens, API keys, passwords, bearer credentials, private keys, and trace identifiers before task storage and reporting.
-- 跨技术栈标准化故障并生成稳定的 `ft-…` 指纹。<br>
-  Normalize failures across ecosystems and assign stable `ft-…` fingerprints.
-- 保守地比较修复前后输出：<br>
-  Compare before/after output conservatively:
-  - `verified`：原始故障指纹消失，并且出现明确的成功信号。<br>
-    Original fingerprints disappeared and an explicit pass signal exists.
-  - `failed`：至少一个原始故障指纹仍然存在。<br>
-    At least one original fingerprint remains.
-  - `inconclusive`：原始故障消失，但结果不明确或出现了新故障。<br>
-    The original disappeared, but the rerun is ambiguous or contains new failures.
-- 可选读取本地目录或公开 GitHub 仓库，补充技术栈上下文。<br>
-  Optionally inspect a local directory or public GitHub repository for stack context.
-- 可选择在可信本地仓库的隔离副本中复现 pytest。<br>
-  Optionally reproduce pytest in an isolated copy of a trusted local repository.
-- 提供 CLI、异步 FastAPI API 和浏览器控制台。<br>
-  Use the CLI, asynchronous FastAPI API, or browser dashboard.
-- 导出独立 Markdown 证据报告或完整 JSON 结果。<br>
-  Export a standalone Markdown evidence report or full JSON result.
-- 使用 `fixtrace verify` 作为自动化门禁：退出码 `0` 表示已验证，其他结果返回 `1`。<br>
-  Use `fixtrace verify` as an automation gate: exit code `0` means verified; every other result exits `1`.
+```text
+日志 / 仓库
+Logs / repository
+       │
+       ▼
+确定性证据层：解析 · 分类 · 脱敏 · 指纹
+Deterministic evidence: parse · classify · redact · fingerprint
+       │
+       ▼
+LLM Agent：观察 → 规划 → 只读工具 → 新观察 → 收敛
+LLM Agent: observe → plan → read-only tool → observe → finalize
+       │
+       ▼
+证据化结论：每条 Finding 引用 ev-* / obs-*
+Grounded findings: every finding cites ev-* / obs-*
+       │
+       ▼
+确定性验证：比较修复前后指纹和成功信号
+Deterministic verification: compare fingerprints and pass signals
+```
 
-FixTrace 使用确定性规则。置信度表示规则匹配强度，不代表根因已经得到证明。
+Agent 当前可以主动选择：
 
-FixTrace uses deterministic rules. A confidence score describes rule-match strength; it does not claim that the root cause has been proven.
+The agent can currently choose among:
 
-## 适用人群 / Who it helps
+- `inspect_evidence`：读取结构化证据账本。<br>
+  Read the structured evidence ledger.
+- `list_files`：在已准备的仓库中列出有限数量文件。<br>
+  List a bounded set of files in the prepared repository.
+- `search_source`：进行大小受限的源码文本搜索。<br>
+  Run a size-bounded literal source search.
+- `read_source`：读取仓库内有限行数，路径穿越和符号链接逃逸会被拒绝。<br>
+  Read a bounded line range; path traversal and symlink escape are rejected.
+- `finalize`：提交带有效证据引用的结论；无效引用会被退回修正。<br>
+  Submit findings with valid citations; invalid citations are rejected for correction.
 
-| 用户 / User | 示例输入 / Example input | FixTrace 输出 / Output |
-|---|---|---|
-| 应用开发者<br>Application developer | 异常堆栈或 ERROR 日志<br>Exception or error-level log | 运行时指纹和源码优先排查清单<br>Runtime fingerprint and source-first playbook |
-| QA 工程师<br>QA engineer | pytest、Jest、Go 或 Java 测试失败<br>Failed pytest, Jest, Go, or Java test | 标准化测试契约和回归证据<br>Normalized test contract and regression evidence |
-| SRE / DevOps | HTTP 5xx、超时、OOMKilled、CrashLoopBackOff | 运行信号和平台排查清单<br>Operational signals and platform response checklist |
-| 数据/后端工程师<br>Data / backend engineer | SQLSTATE、死锁、连接池耗尽<br>SQLSTATE, deadlock, pool exhaustion | 数据库分类和状态检查<br>Database classification and state checks |
-| 技术支持<br>Technical support | 不含源码的用户侧脱敏日志<br>Sanitized customer-side log without source code | 可分享的事件调查档案<br>Shareable incident profile without cloning a repository |
+Agent 没有 Shell、写文件、网络请求或代码修改工具。最大步数默认为 6，避免失控循环和不可预测费用。报告只记录简短的动作理由、参数和观察，不保存模型的私有思维链。
 
-FixTrace 不局限于 GitHub Actions 或 CI。代码仓库是可选项；一份故障日志就能开始调查，再提供一份修复后的日志即可进行恢复验证。
+The agent has no shell, write, network, or code-editing tool. It stops after six model calls by default to prevent runaway loops and unpredictable cost. Reports retain concise action reasons, arguments, and observations—not private chain-of-thought.
 
-FixTrace is not limited to GitHub Actions or CI. A repository is optional; one failure log is enough to begin, and an after-fix log turns the analysis into a recovery gate.
+## 支持范围 / Coverage
+
+- 九类事件：测试、构建、依赖、API/网络、数据库、容器/平台、配置、应用运行时和未知事件。<br>
+  Nine domains: test, build, dependency, API/network, database, container/platform, configuration, application/runtime, and unknown incidents.
+- pytest、Jest/Vitest、Go test、Maven/Gradle、HTTP、数据库、容器终止、依赖解析、编译器和通用应用日志。<br>
+  pytest, Jest/Vitest, Go test, Maven/Gradle, HTTP, database, container, dependency, compiler, and generic application logs.
+- 纯日志、公开 GitHub 仓库或可信本地目录。<br>
+  Log-only input, public GitHub repositories, or trusted local directories.
+- HTTP 状态、平台原因、数据库代码、源码位置、时间戳、追踪上下文、故障数量和超时等信号。<br>
+  HTTP status, platform reason, database code, source location, timestamp, trace context, failure count, timeout, and related signals.
+- 修复结果分为 `verified`、`failed`、`inconclusive` 和 `pending`。<br>
+  Recovery results are `verified`, `failed`, `inconclusive`, or `pending`.
+
+FixTrace 不局限于 CI。开发、测试、SRE、技术支持、内部平台和任何能提供故障日志的团队都可以使用。
+
+FixTrace is not limited to CI. It works for developers, QA, SRE, support, internal platforms, and any team that can supply failure evidence.
 
 ## 快速开始 / Quick start
 
@@ -91,22 +96,44 @@ FixTrace is not limited to GitHub Actions or CI. A repository is optional; one f
 python -m venv .venv
 source .venv/bin/activate
 pip install -e '.[dev]'
+```
+
+### 1. 配置 LLM / Configure the LLM
+
+FixTrace v0.4 内置 OpenAI Responses API Provider。API Key 只从服务端环境变量读取，永远不通过分析请求提交。模型 ID 要显式配置，避免项目悄悄切换模型或产生意外费用。
+
+FixTrace v0.4 includes an OpenAI Responses API provider. The API key is read only from the server environment and is never accepted in an analysis request. The model ID is explicit so the project never silently changes models or cost.
+
+```bash
+export FIXTRACE_LLM_PROVIDER=openai
+export FIXTRACE_LLM_MODEL=<your-model-id>
+export OPENAI_API_KEY=<your-api-key>
+```
+
+可选配置 / Optional settings:
+
+```bash
+export FIXTRACE_LLM_BASE_URL=https://api.openai.com/v1
+export FIXTRACE_LLM_TIMEOUT_SECONDS=60
+export FIXTRACE_AGENT_MAX_STEPS=6
+export FIXTRACE_AGENT_MAX_TOOL_OUTPUT_CHARS=12000
+```
+
+实现使用 `POST /v1/responses`、关闭响应存储，并由 FixTrace 在本地执行自定义只读工具。接口详情见 [OpenAI Responses API 官方文档](https://developers.openai.com/api/reference/resources/responses/methods/create)。
+
+The implementation uses `POST /v1/responses`, disables response storage, and executes FixTrace's custom read-only tools locally. See the [official OpenAI Responses API documentation](https://developers.openai.com/api/reference/resources/responses/methods/create).
+
+### 2. 启动 Web 应用 / Start the Web app
+
+```bash
 uvicorn fixtrace.api.app:app --reload --port 8080
 ```
 
-打开 <http://127.0.0.1:8080>，点击 **Load demo**，无需仓库即可调查一次 API 故障，并验证服务从 HTTP 503 恢复到 HTTP 200。
+打开 <http://127.0.0.1:8080>。页面状态栏会显示 Agent 是否配置完成。
 
-Open <http://127.0.0.1:8080> and choose **Load demo** to investigate a repository-free API outage and verify recovery from HTTP 503 to HTTP 200.
+Open <http://127.0.0.1:8080>. The status line shows whether an agent provider is configured.
 
-### 仅分析日志 / Analyze only a log
-
-```bash
-fixtrace analyze \
-  --failure-file artifacts/failing-run.txt \
-  --output reports/investigation.md
-```
-
-### 添加仓库上下文 / Add repository context
+### 3. 调查故障 / Investigate a failure
 
 ```bash
 fixtrace analyze /path/to/repository \
@@ -114,7 +141,23 @@ fixtrace analyze /path/to/repository \
   --output reports/investigation.md
 ```
 
-### 验证修复 / Prove a repair
+默认 `auto` 模式在 LLM 已配置时运行 Agent；未配置时仍返回确定性证据报告。
+
+The default `auto` mode runs the agent when an LLM is configured and falls back to the deterministic evidence report otherwise.
+
+```bash
+# Agent 未完成则命令失败 / Fail unless the agent completes
+fixtrace analyze /path/to/repository \
+  --failure-file artifacts/failing-run.txt \
+  --require-agent
+
+# 明确跳过 LLM / Explicitly skip the LLM
+fixtrace analyze \
+  --failure-file artifacts/failing-run.txt \
+  --no-agent
+```
+
+### 4. 独立验证修复 / Verify recovery independently
 
 ```bash
 fixtrace verify \
@@ -123,92 +166,69 @@ fixtrace verify \
   --output reports/verification.md
 ```
 
-只有原始故障指纹消失，并且修复后输出包含可识别的成功信号时，该命令才以成功状态退出。因此它可以作为 CI 步骤或合并前质量门禁。
+`fixtrace verify` 是不调用 LLM 的机器门禁。只有原始故障指纹消失且出现明确成功信号时退出码才为 `0`。
 
-The command exits successfully only when the original fingerprints are absent and the after-fix output contains a recognized success signal. This makes it suitable for a CI step or pre-merge quality gate.
+`fixtrace verify` is a model-free machine gate. It exits `0` only when the original fingerprints disappear and an explicit pass signal is present.
 
-### 复现可信 pytest 项目 / Reproduce a trusted pytest project
+### 可信本地复现 / Trusted local reproduction
 
 ```bash
-fixtrace analyze examples/python_buggy --execute
+fixtrace analyze examples/python_buggy --execute --require-agent
 ```
 
-`--execute` 是明确的信任选择。Web API 只有在同时启用 `FIXTRACE_ALLOW_LOCAL_SOURCES=1` 和 `FIXTRACE_ALLOW_LOCAL_EXECUTION=1` 后，才会接受本地路径并运行 pytest。
+`--execute` 会在仓库副本中运行检测到的 pytest，仅应用于可信代码。Web 服务还要求 `FIXTRACE_ALLOW_LOCAL_SOURCES=1` 和 `FIXTRACE_ALLOW_LOCAL_EXECUTION=1`。
 
-`--execute` is an explicit trust decision. The Web API accepts local paths and executes pytest only when both `FIXTRACE_ALLOW_LOCAL_SOURCES=1` and `FIXTRACE_ALLOW_LOCAL_EXECUTION=1` are enabled.
-
-## 证据流水线 / Evidence pipeline
-
-```text
-intake → checkout/context → detect → reproduce/ingest → diagnose → verify → report
-```
-
-FixTrace 明确区分观察事实和推断结果：
-
-FixTrace keeps observations separate from inferences:
-
-- 事件档案判断运行领域并展示规则提取的信号。<br>
-  Incident profiles classify the operational domain and expose rule-derived signals.
-- 首轮排查清单由事件类型选择，而不是由不透明的对话生成。<br>
-  First-response playbooks are selected by incident type instead of generated from an opaque chat.
-- 故障记录包含标准化事实和稳定指纹。<br>
-  Failure records contain normalized facts and a stable fingerprint.
-- 证据账本记录每项事实的来源。<br>
-  The evidence ledger records where each fact came from.
-- 根因假设引用证据 ID，不会悄悄变成事实。<br>
-  Root-cause hypotheses cite evidence IDs and never silently become facts.
-- 恢复验证比较前后指纹，并要求明确的成功信号。<br>
-  Recovery verification compares before/after fingerprints and requires an explicit success signal.
-
-疑似敏感值会在解析和报告前替换为 `[REDACTED]`。内置脱敏器采取保守规则，不能替代专业的密钥扫描工具。
-
-Likely sensitive values are replaced with `[REDACTED]` before parsing and reporting. The built-in redactor is conservative and is not a substitute for a dedicated secret scanner.
+`--execute` runs detected pytest in a repository copy and is for trusted code only. The Web service additionally requires `FIXTRACE_ALLOW_LOCAL_SOURCES=1` and `FIXTRACE_ALLOW_LOCAL_EXECUTION=1`.
 
 ## API
 
 | 方法 / Method | 端点 / Endpoint | 用途 / Purpose |
 |---|---|---|
-| `GET` | `/api/health` | 服务能力和执行策略<br>Capabilities and execution policy |
-| `POST` | `/api/analyses` | 创建日志分析或仓库调查任务<br>Queue a log analysis or repository investigation |
+| `GET` | `/api/health` | Agent 配置、能力和执行策略<br>Agent configuration, capabilities, and execution policy |
+| `POST` | `/api/analyses` | 创建调查任务<br>Queue an investigation |
 | `GET` | `/api/analyses` | 列出调查任务<br>List investigations |
-| `GET` | `/api/analyses/{id}` | 查询任务状态和结构化结果<br>Poll task state and structured results |
+| `GET` | `/api/analyses/{id}` | 查询阶段、Agent Trace 和结果<br>Poll stages, agent trace, and results |
 | `GET` | `/api/analyses/{id}/report` | 下载 Markdown 报告<br>Download the Markdown report |
-
-无需仓库的 API 事件恢复验证请求 / Repository-free API recovery verification request:
 
 ```json
 {
-  "repository": null,
+  "repository": "https://github.com/owner/repository",
   "execution_mode": "inspect",
-  "failure_output": "GET /api/checkout\nHTTP/1.1 503 Service Unavailable\ntimeout after 5s",
+  "agent_mode": "auto",
+  "failure_output": "GET /api/checkout\nHTTP/1.1 503 Service Unavailable",
   "verification_output": "GET /api/checkout\nHTTP/1.1 200 OK\nhealth check passed"
 }
 ```
 
-## 安全模型 / Security model
+`agent_mode` 支持：
 
-仓库测试属于可执行代码，因此 FixTrace 默认采用保守策略：
+`agent_mode` accepts:
 
-Repository tests are executable code, so FixTrace uses conservative defaults:
+- `auto`：配置完成则运行，否则回退到确定性报告。<br>
+  Run when configured; otherwise return the deterministic report.
+- `required`：Agent 未配置、调用失败、超出步数或无法形成有效引用时，任务失败。<br>
+  Fail if unconfigured, unavailable, over budget, or unable to produce valid citations.
+- `off`：不调用模型。<br>
+  Do not call a model.
 
-- 纯日志分析不会执行仓库代码。<br>
-  Log-only analysis does not execute repository code.
-- Web 请求默认不能访问服务器本地路径或运行测试。<br>
-  Web requests cannot access server-local paths or execute tests by default.
-- GitHub 来源必须符合 `https://github.com/owner/repository`。<br>
-  GitHub sources must match `https://github.com/owner/repository`.
-- 本地执行在仓库副本中进行，并使用不包含主机 API Key 或 Token 的最小环境。<br>
-  Local execution uses a copied workspace and a minimal environment without host API keys or tokens.
-- 用户不能自定义执行命令；本地执行目前只调用检测到的 pytest。<br>
-  Command selection is not user-controlled; local execution currently invokes detected pytest.
-- 输出有大小限制，执行有超时限制。<br>
-  Output is size-capped and execution has a timeout.
-- 常见凭据和追踪标识符会在进入结果前被脱敏。<br>
-  Common credentials and trace identifiers are redacted before entering results.
+## 安全与隐私 / Security and privacy
 
-本地执行并非完整沙箱，可能仍有网络访问。只应对可信代码使用；不可信仓库应在一次性虚拟机中运行。详情见 [SECURITY.md](SECURITY.md)。
+- 日志在进入任务存储和模型上下文前，本地脱敏常见 Token、API Key、密码、Bearer 凭据、私钥和追踪标识符。<br>
+  Common tokens, API keys, passwords, bearer credentials, private keys, and trace identifiers are locally redacted before task storage or model context.
+- 读取源码和搜索源码的输出也会再次脱敏。<br>
+  Source reads and search results receive another redaction pass.
+- 模型凭据只存在于服务器环境中，不属于请求模型或报告。<br>
+  Provider credentials exist only in the server environment, never in request models or reports.
+- Agent 工具只读、路径受限、输出受限、步数受限。<br>
+  Agent tools are read-only, path-contained, output-capped, and step-capped.
+- 日志和源码仍可能包含内置规则无法识别的敏感业务数据。使用托管模型前请审查数据策略。<br>
+  Logs and source may still contain sensitive business data not recognized by built-in rules. Review your data policy before using a hosted model.
+- 本地执行不是完整操作系统沙箱；不可信代码应放在一次性虚拟机中。<br>
+  Local execution is not a complete OS sandbox; use a disposable VM for untrusted code.
 
-Local execution is not a complete sandbox and may retain network access. Use it only for trusted code; run untrusted repositories in a disposable VM. See [SECURITY.md](SECURITY.md).
+详见 [SECURITY.md](SECURITY.md)。
+
+See [SECURITY.md](SECURITY.md).
 
 ## Docker
 
@@ -216,9 +236,9 @@ Local execution is not a complete sandbox and may retain network access. Use it 
 docker compose up --build
 ```
 
-提供的容器使用只读文件系统、禁止权限提升，并关闭本地来源和测试执行。它支持安全的纯日志分析和公开仓库检查。
+Compose 会从宿主机传入可选的 LLM 配置；未配置时容器仍能提供确定性报告。容器默认只读、禁止权限提升，并关闭本地来源和测试执行。
 
-The supplied container is read-only, drops privilege escalation, and disables local sources and test execution. It supports safe log-only analysis and public repository inspection.
+Compose forwards optional LLM settings from the host. Without them, the container still returns deterministic reports. The container is read-only, drops privilege escalation, and disables local sources and test execution by default.
 
 ## 开发 / Development
 
@@ -228,24 +248,22 @@ ruff check src tests
 pytest
 ```
 
-`examples/python_buggy` 中包含一个故意损坏的项目，它不会进入 FixTrace 自身测试，仅用于演示故障复现。
+测试使用脚本化 Fake Provider，不会访问网络或消耗模型额度。
 
-The deliberately broken project in `examples/python_buggy` is excluded from FixTrace's own test suite and exists only to demonstrate failure reproduction.
+Tests use a scripted fake provider; they make no network calls and consume no model quota.
 
 ## 路线图 / Roadmap
 
-- 持久化故障指纹历史和重复事件趋势。<br>
-  Persistent fingerprint history and recurring-incident trends.
-- 自动接入 GitHub Actions 日志和构建产物。<br>
-  GitHub Actions log and artifact ingestion.
-- 容器化、禁用网络的复现工作节点。<br>
-  Containerized, network-disabled reproduction workers.
-- SARIF 和 GitHub Check 输出。<br>
-  SARIF and GitHub Check output.
+- 增加本地模型和其他 Provider 适配器。<br>
+  Add local-model and additional provider adapters.
+- 允许管理员注册经过权限声明的 MCP 只读工具。<br>
+  Let administrators register permission-declared, read-only MCP tools.
+- 持久化故障指纹历史、Agent 评价和回归样例。<br>
+  Persist fingerprint history, agent feedback, and regression cases.
 - 增加云服务、消息队列、缓存和数据流水线适配器。<br>
-  More adapters for cloud providers, queues, caches, and data pipelines.
-- 可选的 AI 增强，但只能引用已经收集的证据。<br>
-  Optional AI enrichment that can only cite collected evidence.
+  Add adapters for cloud providers, queues, caches, and data pipelines.
+- 输出 SARIF、GitHub Check 和可嵌入 Widget。<br>
+  Export SARIF, GitHub Checks, and embeddable widgets.
 
 ## 许可证 / License
 
