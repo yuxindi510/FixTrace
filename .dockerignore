@@ -1,0 +1,13 @@
+.git
+.github
+.venv
+.fixtrace
+__pycache__
+*.py[cod]
+.pytest_cache
+.ruff_cache
+dist
+reports
+tests
+.env
+

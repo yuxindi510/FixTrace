@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FixTrace — prove the fix</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #071014;
+      --panel: rgba(15, 29, 34, .82);
+      --line: rgba(151, 190, 191, .18);
+      --ink: #edf7f4;
+      --muted: #8ba5a2;
+      --mint: #75f0bd;
+      --amber: #ffc46b;
+      --red: #ff7c78;
+      --blue: #7cc8ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 82% 8%, rgba(24, 117, 102, .25), transparent 32rem),
+        radial-gradient(circle at 10% 48%, rgba(31, 87, 120, .18), transparent 28rem),
+        var(--bg);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: .18;
+      background-image: linear-gradient(var(--line) 1px, transparent 1px),
+                        linear-gradient(90deg, var(--line) 1px, transparent 1px);
+      background-size: 34px 34px;
+      mask-image: linear-gradient(to bottom, black, transparent 75%);
+    }
+    .shell { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 28px 0 64px; }
+    header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 48px; }
+    .brand { display: flex; align-items: center; gap: 12px; font-weight: 760; letter-spacing: -.02em; }
+    .mark { width: 32px; height: 32px; border: 1px solid var(--mint); border-radius: 9px; display: grid; place-items: center; box-shadow: 0 0 30px rgba(117, 240, 189, .16); }
+    .mark::after { content: "✓"; color: var(--mint); font-size: 18px; }
+    .status { color: var(--muted); font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .status::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 8px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 10px var(--mint); }
+    .hero { display: grid; grid-template-columns: 1.15fr .85fr; gap: 34px; align-items: end; margin-bottom: 28px; }
+    .eyebrow { color: var(--mint); text-transform: uppercase; letter-spacing: .16em; font: 700 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    h1 { max-width: 760px; margin: 14px 0; font-size: clamp(42px, 7vw, 82px); line-height: .95; letter-spacing: -.065em; }
+    .hero p { max-width: 630px; margin: 0; color: var(--muted); font-size: 17px; line-height: 1.65; }
+    .metric { justify-self: end; width: 230px; padding: 18px; border-left: 1px solid var(--mint); background: linear-gradient(90deg, rgba(117, 240, 189, .08), transparent); }
+    .metric strong { display: block; color: var(--mint); font: 32px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .metric span { color: var(--muted); font-size: 12px; }
+    .grid { display: grid; grid-template-columns: 410px 1fr; gap: 18px; align-items: start; }
+    .panel { position: relative; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); backdrop-filter: blur(16px); box-shadow: 0 24px 70px rgba(0, 0, 0, .24); overflow: hidden; }
+    .panel-head { display: flex; justify-content: space-between; align-items: center; padding: 16px 18px; border-bottom: 1px solid var(--line); }
+    .panel-head h2 { margin: 0; font-size: 13px; letter-spacing: .04em; }
+    .index { color: var(--muted); font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    form { padding: 18px; }
+    label { display: block; margin: 0 0 8px; color: var(--muted); font-size: 12px; }
+    input, textarea, select {
+      width: 100%; border: 1px solid var(--line); border-radius: 9px; outline: none;
+      background: rgba(1, 8, 10, .7); color: var(--ink); padding: 11px 12px;
+      font: 13px ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    input:focus, textarea:focus, select:focus { border-color: rgba(117, 240, 189, .6); box-shadow: 0 0 0 3px rgba(117, 240, 189, .08); }
+    textarea { min-height: 170px; resize: vertical; line-height: 1.5; }
+    .field { margin-bottom: 16px; }
+    .hint { margin-top: 7px; color: #69817f; font-size: 11px; line-height: 1.45; }
+    .actions { display: flex; gap: 10px; }
+    button { border: 0; border-radius: 9px; padding: 11px 16px; cursor: pointer; font-weight: 750; }
+    button[type=submit] { flex: 1; background: var(--mint); color: #062119; }
+    button.secondary { border: 1px solid var(--line); color: var(--muted); background: transparent; }
+    button:disabled { opacity: .5; cursor: wait; }
+    .workspace { min-height: 552px; }
+    .empty { min-height: 500px; display: grid; place-items: center; padding: 40px; text-align: center; color: var(--muted); }
+    .empty-glyph { width: 86px; height: 86px; margin: 0 auto 20px; border: 1px solid var(--line); border-radius: 50%; display: grid; place-items: center; color: var(--mint); font: 30px ui-monospace, monospace; }
+    .results { display: none; }
+    .results.active { display: block; }
+    .summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--line); border-bottom: 1px solid var(--line); }
+    .summary div { padding: 15px; background: var(--panel); }
+    .summary span { display: block; color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .12em; }
+    .summary strong { display: block; margin-top: 7px; font: 13px ui-monospace, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .content { padding: 18px; }
+    .section-title { margin: 22px 0 12px; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .14em; }
+    .timeline { display: flex; gap: 7px; overflow-x: auto; padding-bottom: 4px; }
+    .stage { min-width: 82px; padding: 9px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); font: 10px ui-monospace, monospace; }
+    .stage.completed { border-color: rgba(117, 240, 189, .38); color: var(--mint); }
+    .stage.started { border-color: rgba(124, 200, 255, .42); color: var(--blue); }
+    .stage.failed { border-color: rgba(255, 124, 120, .5); color: var(--red); }
+    .cards { display: grid; gap: 9px; }
+    .card { padding: 13px 14px; border: 1px solid var(--line); border-radius: 9px; background: rgba(4, 13, 16, .44); }
+    .card-top { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
+    .card strong { font-size: 13px; }
+    .card small { color: var(--mint); font: 10px ui-monospace, monospace; }
+    .card p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
+    pre { max-height: 330px; overflow: auto; margin: 0; padding: 14px; border: 1px solid var(--line); border-radius: 9px; background: #03090b; color: #bcd0cd; font: 11px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; }
+    .error { color: var(--red); }
+    @media (max-width: 860px) {
+      .hero, .grid { grid-template-columns: 1fr; }
+      .metric { display: none; }
+      h1 { font-size: 52px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div class="brand"><span class="mark"></span>FixTrace</div>
+      <div class="status" id="health">checking service</div>
+    </header>
+    <section class="hero">
+      <div>
+        <div class="eyebrow">Evidence-driven failure analysis</div>
+        <h1>Don’t guess.<br>Prove the fix.</h1>
+        <p>Turn a failed CI run into a reproducible case, an evidence ledger, and a repair plan reviewers can trust.</p>
+      </div>
+      <div class="metric"><strong>7 stages</strong><span>from intake to verified report</span></div>
+    </section>
+    <section class="grid">
+      <article class="panel">
+        <div class="panel-head"><h2>New investigation</h2><span class="index">01 / INPUT</span></div>
+        <form id="analysis-form">
+          <div class="field">
+            <label for="repository">Public GitHub repository</label>
+            <input id="repository" required placeholder="https://github.com/owner/repository">
+          </div>
+          <div class="field">
+            <label for="mode">Execution policy</label>
+            <select id="mode"><option value="inspect">Inspect supplied output (safe default)</option><option value="local">Run pytest locally (trusted deployments only)</option></select>
+            <div class="hint">Remote code execution is disabled unless the server owner explicitly enables it.</div>
+          </div>
+          <div class="field">
+            <label for="failure">pytest or CI failure output</label>
+            <textarea id="failure" placeholder="FAILED tests/test_total.py::test_discount - AssertionError: assert 12 == 10"></textarea>
+          </div>
+          <div class="actions">
+            <button class="secondary" id="demo" type="button">Load demo</button>
+            <button id="submit" type="submit">Analyze evidence</button>
+          </div>
+        </form>
+      </article>
+      <article class="panel workspace">
+        <div class="panel-head"><h2>Investigation workspace</h2><span class="index" id="task-id">02 / READY</span></div>
+        <div class="empty" id="empty"><div><div class="empty-glyph">⌁</div><strong>No investigation running</strong><p>Submit a repository and failure output to build an evidence trail.</p></div></div>
+        <div class="results" id="results">
+          <div class="summary"><div><span>Status</span><strong id="result-status">—</strong></div><div><span>Stack</span><strong id="result-stack">—</strong></div><div><span>Verdict</span><strong id="result-verdict">—</strong></div></div>
+          <div class="content">
+            <div class="section-title">Pipeline</div><div class="timeline" id="timeline"></div>
+            <div class="section-title">Root-cause hypotheses</div><div class="cards" id="hypotheses"></div>
+            <div class="section-title">Evidence ledger</div><div class="cards" id="evidence"></div>
+            <div class="section-title">Portable report</div><pre id="report">Waiting for analysis…</pre>
+          </div>
+        </div>
+      </article>
+    </section>
+  </main>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+    let pollTimer;
+
+    async function checkHealth() {
+      try { const data = await fetch('/api/health').then(r => r.json()); $('health').textContent = `service online · v${data.version}`; }
+      catch { $('health').textContent = 'service unavailable'; $('health').classList.add('error'); }
+    }
+
+    $('demo').addEventListener('click', () => {
+      $('repository').value = 'https://github.com/pallets/click';
+      $('mode').value = 'inspect';
+      $('failure').value = `FAILED tests/test_options.py::test_default_value - AssertionError: assert 'prod' == 'dev'\ntests/test_options.py:42: AssertionError`;
+    });
+
+    $('analysis-form').addEventListener('submit', async (event) => {
+      event.preventDefault(); clearTimeout(pollTimer); $('submit').disabled = true;
+      const payload = { repository: $('repository').value.trim(), execution_mode: $('mode').value, failure_output: $('failure').value };
+      try {
+        const response = await fetch('/api/analyses', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+        if (!response.ok) throw new Error((await response.json()).detail || 'Unable to start analysis');
+        const task = await response.json();
+        $('empty').style.display = 'none'; $('results').classList.add('active'); $('task-id').textContent = `TASK / ${task.id}`;
+        renderTask(task); poll(task.id);
+      } catch (error) { showError(error.message); $('submit').disabled = false; }
+    });
+
+    async function poll(id) {
+      try {
+        const response = await fetch(`/api/analyses/${id}`);
+        if (!response.ok) throw new Error('Unable to read task');
+        const task = await response.json(); renderTask(task);
+        if (task.status === 'queued' || task.status === 'running') pollTimer = setTimeout(() => poll(id), 700);
+        else $('submit').disabled = false;
+      } catch (error) { showError(error.message); $('submit').disabled = false; }
+    }
+
+    function renderTask(task) {
+      $('result-status').textContent = task.status;
+      $('timeline').innerHTML = task.stages.map(item => `<div class="stage ${escapeHtml(item.status)}"><strong>${escapeHtml(item.stage)}</strong><br>${escapeHtml(item.status)}</div>`).join('') || '<div class="stage started">queued</div>';
+      if (task.error) { showError(task.error); return; }
+      if (!task.report) return;
+      const report = task.report;
+      $('result-stack').textContent = report.stack.primary_language;
+      $('result-verdict').textContent = report.verdict;
+      $('hypotheses').innerHTML = report.hypotheses.map(item => `<div class="card"><div class="card-top"><strong>${escapeHtml(item.title)}</strong><small>${Math.round(item.confidence*100)}%</small></div><p>${escapeHtml(item.explanation)} Next: ${escapeHtml(item.next_action)}</p></div>`).join('') || '<div class="card"><p>No hypothesis yet. Supply a complete failure trace.</p></div>';
+      $('evidence').innerHTML = report.evidence.map(item => `<div class="card"><div class="card-top"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.id)}</small></div><p>${escapeHtml(item.detail)}</p></div>`).join('');
+      $('report').textContent = report.markdown;
+    }
+
+    function showError(message) {
+      $('empty').style.display = 'none'; $('results').classList.add('active');
+      $('result-status').textContent = 'failed'; $('result-status').classList.add('error');
+      $('report').textContent = message;
+    }
+    checkHealth();
+  </script>
+</body>
+</html>
