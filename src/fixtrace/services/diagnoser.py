@@ -7,12 +7,27 @@ from fixtrace.core.models import (
     Evidence,
     Failure,
     Hypothesis,
+    IncidentProfile,
     StackProfile,
     VerificationResult,
 )
 
 
 class EvidenceDiagnoser:
+    @staticmethod
+    def incident_evidence(incident: IncidentProfile) -> Evidence:
+        signal_summary = "; ".join(
+            f"{signal.label}: {signal.detail}" for signal in incident.signals[:3]
+        ) or "No structured runtime signal was extracted."
+        return Evidence(
+            id="ev-incident",
+            kind="incident_signal",
+            title=f"{incident.domain.value} incident · {incident.severity.value}",
+            detail=f"{incident.title}. {signal_summary}",
+            source="deterministic incident classifier",
+            confidence=0.9 if incident.domain.value != "unknown" else 0.5,
+        )
+
     @staticmethod
     def verification_evidence(verification: VerificationResult) -> Evidence:
         return Evidence(
@@ -59,8 +74,8 @@ class EvidenceDiagnoser:
                 Evidence(
                     id="ev-privacy",
                     kind="privacy",
-                    title=f"Redacted {redaction_count} potential secret(s)",
-                    detail="Sensitive values were replaced before parsing and reporting.",
+                    title=f"Redacted {redaction_count} sensitive value(s)",
+                    detail="Credentials or trace identifiers were replaced before reporting.",
                     source="local privacy filter",
                     confidence=1.0,
                 )
@@ -196,6 +211,47 @@ class EvidenceDiagnoser:
                 "A compiler or build tool rejected a source location before runtime.",
                 "Inspect the normalized source location and reproduce with the same toolchain.",
                 0.88,
+            )
+        if failure_type == "HttpError":
+            return (
+                "api-network",
+                "Upstream service or request boundary failed",
+                "The observed HTTP status represents a failed client or server request.",
+                "Confirm the route, upstream health, timeout, and trace context for this request.",
+                0.9,
+            )
+        if failure_type == "DatabaseError":
+            return (
+                "database",
+                "Database availability or transaction contract failed",
+                "The log contains a database-specific error signal.",
+                "Inspect the error code, pool state, locks, migrations, and storage capacity.",
+                0.88,
+            )
+        if failure_type == "ContainerError":
+            return (
+                "container",
+                "Workload failed at the container or platform layer",
+                "The platform reported a recognized workload termination or restart reason.",
+                "Inspect workload events, prior logs, probes, image digest, and resource limits.",
+                0.92,
+            )
+        if failure_type == "DependencyError":
+            return (
+                "dependency-resolution",
+                "Dependency installation or module resolution failed",
+                "The required package could not be resolved or imported.",
+                "Reproduce from the lockfile in a clean environment and compare runtime versions.",
+                0.9,
+            )
+        if failure_type == "ApplicationError":
+            return (
+                "application-runtime",
+                "Application emitted an error-level event",
+                "A structured error, fatal, panic, or critical log entry was detected.",
+                "Trace the component and request context, then capture the first "
+                "owned stack frame.",
+                0.72,
             )
         if failure_type == "AssertionError" or "assert" in summary:
             return (

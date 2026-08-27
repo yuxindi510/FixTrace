@@ -11,6 +11,7 @@ from fixtrace.core.models import (
     ExecutionMode,
     Failure,
     Hypothesis,
+    IncidentProfile,
     StackProfile,
     VerificationResult,
     VerificationStatus,
@@ -31,6 +32,7 @@ class ReportRenderer:
         failures: list[Failure],
         evidence: list[Evidence],
         hypotheses: list[Hypothesis],
+        incident: IncidentProfile,
         verification: VerificationResult,
     ) -> AnalysisReport:
         verdict = self._verdict(execution_mode, command_result, failures, verification)
@@ -42,7 +44,7 @@ class ReportRenderer:
             f"- Primary language: `{stack.primary_language}`",
             f"- Frameworks: `{', '.join(stack.frameworks) or 'not detected'}`",
             f"- Log format: `{log_format}`",
-            f"- Secrets redacted: `{redaction_count}`",
+            f"- Sensitive values redacted: `{redaction_count}`",
             f"- Execution mode: `{execution_mode.value}`",
             f"- Verdict: **{verdict}**",
             "",
@@ -60,6 +62,28 @@ class ReportRenderer:
             )
         else:
             lines.append("No repository code was executed; supplied failure output was inspected.")
+
+        lines.extend(
+            [
+                "",
+                "## Incident profile",
+                "",
+                f"- Domain: `{incident.domain.value}`",
+                f"- Severity: `{incident.severity.value}`",
+                f"- Classification: {incident.title}",
+                "",
+                "### Key signals",
+                "",
+            ]
+        )
+        if incident.signals:
+            for signal in incident.signals:
+                lines.append(f"- **{signal.label}** — {signal.detail}")
+        else:
+            lines.append("No structured operational signal was extracted.")
+        lines.extend(["", "### First-response playbook", ""])
+        for index, action in enumerate(incident.playbook, start=1):
+            lines.append(f"{index}. {action}")
 
         lines.extend(["", "## Failures", ""])
         if failures:
@@ -138,6 +162,7 @@ class ReportRenderer:
             failures=failures,
             evidence=evidence,
             hypotheses=hypotheses,
+            incident=incident,
             verification=verification,
             verdict=verdict,
             markdown=markdown,

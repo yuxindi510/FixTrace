@@ -19,10 +19,10 @@ runner is available.
 
 ## Secrets
 
-FixTrace applies a local, high-confidence redaction pass before parsing and reporting logs. This is
-a safety net, not a complete secret scanner: unusual credential formats and sensitive business
-data may remain. Avoid pasting secrets, never commit a local `.env`, and review reports before
-publishing them.
+FixTrace applies a local, high-confidence redaction pass to common credentials and trace identifiers
+before parsing and reporting logs. This is a safety net, not a complete secret scanner: unusual
+credential formats and sensitive business data may remain. Avoid pasting secrets, never commit a
+local `.env`, and review reports before publishing them.
 
 ## Reporting a vulnerability
 

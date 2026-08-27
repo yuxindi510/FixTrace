@@ -1,11 +1,11 @@
 # FixTrace
 
-**Privacy-first failure intelligence and repair verification.**
+**Privacy-first software incident triage and recovery verification.**
 
-FixTrace turns noisy test, build, deployment, and runtime output into a deterministic evidence
-record. It redacts likely secrets, detects the log format, normalizes failures, creates stable
-fingerprints, links root-cause hypotheses to evidence, and compares before/after runs to decide
-whether a repair is actually proven.
+FixTrace turns noisy API, database, container, dependency, build, test, deployment, and application
+logs into a deterministic investigation record. It redacts likely secrets, classifies the incident,
+extracts operational signals, creates stable failure fingerprints, builds a scenario-specific
+first-response playbook, and compares before/after runs to decide whether recovery is proven.
 
 No repository or AI API is required for log-only analysis.
 
@@ -22,18 +22,25 @@ different part of the workflow: repeatable failure intake and machine-checkable 
 |---|---|
 | Interactive reasoning and code changes | Unattended, deterministic log processing |
 | Answers one conversation | Produces portable evidence and stable fingerprints |
-| Context depends on the prompt | Applies the same rules in local scripts and CI |
+| Context depends on the prompt | Applies the same rules in scripts, support workflows, and CI |
 | Can propose a plausible repair | Requires before/after evidence before saying “verified” |
 | May use a hosted model | Core analysis runs locally without sending logs to a model |
 
 They work well together: FixTrace prepares sanitized, structured evidence; a developer or coding
 agent investigates and changes the code; FixTrace then acts as the verification gate.
 
-## What works in v0.2
+## What works in v0.3
 
 - Analyze a pasted log without cloning or executing a repository.
-- Detect pytest, Jest/Vitest, Go test, Maven/Gradle, compiler, and generic runtime output.
-- Redact common tokens, API keys, passwords, bearer credentials, and private keys before storage.
+- Classify nine incident domains: tests, builds, dependencies, API/network, databases,
+  containers/platforms, configuration, application runtime, and unknown events.
+- Detect pytest, Jest/Vitest, Go test, Maven/Gradle, HTTP failures, database errors, container
+  termination reasons, dependency resolution errors, compilers, and generic application logs.
+- Extract HTTP statuses, platform reasons, database codes, source locations, timestamps, trace
+  context, failure counts, and timeout signals without exposing trace identifier values.
+- Produce a severity label and a domain-specific first-response playbook.
+- Redact common tokens, API keys, passwords, bearer credentials, private keys, and trace identifiers
+  before task storage and reporting.
 - Normalize failures across ecosystems and assign stable `ft-…` fingerprints.
 - Compare before/after output conservatively:
   - `verified`: original fingerprints disappeared and an explicit pass signal exists;
@@ -48,6 +55,19 @@ agent investigates and changes the code; FixTrace then acts as the verification 
 FixTrace uses deterministic rules. A confidence score describes the strength of a rule match; it
 is not a claim that the root cause has been proven.
 
+## Who it helps
+
+| User | Example input | FixTrace output |
+|---|---|---|
+| Application developer | Exception or error-level application log | Runtime fingerprint and source-first playbook |
+| QA engineer | Failed pytest, Jest, Go, or Java test | Normalized test contract and regression evidence |
+| SRE / DevOps | HTTP 5xx, timeout, OOMKilled, CrashLoopBackOff | Operational signals and platform response checklist |
+| Data / backend engineer | SQLSTATE, deadlock, pool exhaustion | Database classification and state checks |
+| Technical support | Sanitized customer-side log without source code | Shareable incident profile without cloning a repository |
+
+FixTrace is not limited to GitHub Actions or CI. A repository is optional; the smallest useful
+input is one failure log, and an after-fix log turns the same analysis into a recovery gate.
+
 ## Quick start
 
 ```bash
@@ -57,8 +77,8 @@ pip install -e '.[dev]'
 uvicorn fixtrace.api.app:app --reload --port 8080
 ```
 
-Open <http://127.0.0.1:8080> and choose **Load demo** to run a repository-free before/after
-verification.
+Open <http://127.0.0.1:8080> and choose **Load demo** to investigate a repository-free API outage
+and verify its recovery from HTTP 503 to HTTP 200.
 
 ### Analyze only a log
 
@@ -107,6 +127,8 @@ intake → checkout/context → detect → reproduce/ingest → diagnose → ver
 
 The important product boundary is between observation and inference:
 
+- incident profiles classify the operational domain and expose the rule-derived signals;
+- first-response playbooks are selected by incident type instead of generated from an opaque chat;
 - failures contain normalized facts and a stable fingerprint;
 - evidence records where each fact came from;
 - hypotheses cite evidence IDs and never silently become facts;
@@ -125,14 +147,14 @@ redactor is intentionally conservative and is not a substitute for a dedicated s
 | `GET` | `/api/analyses/{id}` | Poll task state and structured results |
 | `GET` | `/api/analyses/{id}/report` | Download the Markdown report |
 
-Repository-free verification request:
+Repository-free API incident verification request:
 
 ```json
 {
   "repository": null,
   "execution_mode": "inspect",
-  "failure_output": "FAIL src/price.test.ts\nExpected: 80\nReceived: 100",
-  "verification_output": "PASS src/price.test.ts\nTests: 5 passed, 5 total"
+  "failure_output": "GET /api/checkout\nHTTP/1.1 503 Service Unavailable\ntimeout after 5s",
+  "verification_output": "GET /api/checkout\nHTTP/1.1 200 OK\nhealth check passed"
 }
 ```
 
@@ -178,7 +200,7 @@ suite and exists only to demonstrate failure reproduction.
 - GitHub Actions log and artifact ingestion.
 - Containerized, network-disabled reproduction workers.
 - SARIF and GitHub Check output.
-- More adapters for deployment platforms and application logs.
+- More adapters for cloud providers, queues, caches, and data pipelines.
 - Optional AI enrichment that can only cite collected evidence.
 
 ## License

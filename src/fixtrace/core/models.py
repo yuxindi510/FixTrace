@@ -32,6 +32,24 @@ class VerificationStatus(StrEnum):
     INCONCLUSIVE = "inconclusive"
 
 
+class IncidentDomain(StrEnum):
+    TEST = "test"
+    BUILD = "build"
+    DEPENDENCY = "dependency"
+    API = "api/network"
+    DATABASE = "database"
+    CONTAINER = "container/platform"
+    CONFIGURATION = "configuration"
+    RUNTIME = "application/runtime"
+    UNKNOWN = "unknown"
+
+
+class IncidentSeverity(StrEnum):
+    WARNING = "warning"
+    ERROR = "error"
+    CRITICAL = "critical"
+
+
 class StageName(StrEnum):
     INTAKE = "intake"
     CHECKOUT = "checkout"
@@ -121,6 +139,7 @@ class Evidence(BaseModel):
         "log_format",
         "privacy",
         "verification",
+        "incident_signal",
     ]
     title: str
     detail: str
@@ -148,6 +167,20 @@ class VerificationResult(BaseModel):
     new_fingerprints: list[str] = Field(default_factory=list)
 
 
+class IncidentSignal(BaseModel):
+    kind: str
+    label: str
+    detail: str
+
+
+class IncidentProfile(BaseModel):
+    domain: IncidentDomain = IncidentDomain.UNKNOWN
+    severity: IncidentSeverity = IncidentSeverity.WARNING
+    title: str = "Unclassified software event"
+    signals: list[IncidentSignal] = Field(default_factory=list)
+    playbook: list[str] = Field(default_factory=list)
+
+
 class AnalysisReport(BaseModel):
     repository: str
     source_kind: Literal["local", "github", "log"]
@@ -159,6 +192,7 @@ class AnalysisReport(BaseModel):
     failures: list[Failure] = Field(default_factory=list)
     evidence: list[Evidence] = Field(default_factory=list)
     hypotheses: list[Hypothesis] = Field(default_factory=list)
+    incident: IncidentProfile = Field(default_factory=IncidentProfile)
     verification: VerificationResult = Field(default_factory=VerificationResult)
     verdict: str
     markdown: str

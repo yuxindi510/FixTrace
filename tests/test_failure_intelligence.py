@@ -5,7 +5,12 @@ from pydantic import ValidationError
 
 from fixtrace.cli import main
 from fixtrace.core.config import Settings
-from fixtrace.core.models import AnalysisRequest, VerificationStatus
+from fixtrace.core.models import (
+    AnalysisRequest,
+    IncidentDomain,
+    IncidentSeverity,
+    VerificationStatus,
+)
 from fixtrace.core.pipeline import AnalysisPipeline
 from fixtrace.services.failure_parser import UniversalFailureParser
 from fixtrace.services.redactor import SecretRedactor
@@ -69,6 +74,45 @@ java.lang.AssertionError: expected 80 but was 100
     assert failure.test_id == "com.example.PriceTest.appliesDiscount"
     assert failure.file == "PriceTest.java"
     assert failure.line == 24
+
+
+def test_parses_operational_incident_formats() -> None:
+    parser = UniversalFailureParser()
+    examples = {
+        "http/api": "GET /health\nHTTP/1.1 503 Service Unavailable",
+        "database": "SQLSTATE[40001]: deadlock detected while updating order",
+        "container/platform": "pod/orders-7f9 terminated: OOMKilled",
+        "dependency": "npm ERR! code ERESOLVE unable to resolve dependency tree",
+        "application": "2026-08-27T08:12:03Z ERROR billing-worker queue publish failed",
+    }
+
+    for expected_format, output in examples.items():
+        failures = parser.parse(output)
+        assert parser.detect_format(output) == expected_format
+        assert failures[0].framework == expected_format
+        assert failures[0].fingerprint.startswith("ft-")
+
+
+def test_http_fingerprints_keep_status_but_drop_query_string() -> None:
+    parser = UniversalFailureParser()
+    unavailable = parser.parse(
+        "GET /api/orders?token=sensitive-value\nHTTP/1.1 503 Service Unavailable"
+    )[0]
+    forbidden = parser.parse("GET /api/orders\nHTTP/1.1 403 Forbidden")[0]
+
+    assert unavailable.test_id == "GET /api/orders"
+    assert unavailable.fingerprint != forbidden.fingerprint
+
+
+def test_network_and_generic_database_errors_are_actionable() -> None:
+    parser = UniversalFailureParser()
+    network = parser.parse("GET /api/orders\nECONNREFUSED upstream orders-service")[0]
+    database = parser.parse("2026-08-27T09:00:00Z ERROR mysql connection failed")[0]
+
+    assert network.framework == "http/api"
+    assert network.exception_type == "HttpError"
+    assert database.framework == "database"
+    assert database.exception_type == "DatabaseError"
 
 
 def test_redacts_secrets_before_they_reach_reports(tmp_path: Path) -> None:
@@ -137,6 +181,60 @@ Tests: 1 failed, 4 passed
     assert report.verdict == "repair verified"
     assert report.verification.status == VerificationStatus.VERIFIED
     assert "fingerprint" in report.markdown
+
+
+def test_api_incident_pipeline_extracts_signals_and_proves_recovery(tmp_path: Path) -> None:
+    settings = Settings(
+        allow_local_execution=False,
+        allow_local_sources=False,
+        timeout_seconds=30,
+        max_output_bytes=50_000,
+        work_root=tmp_path / "work",
+    )
+    report = AnalysisPipeline(settings).run(
+        AnalysisRequest(
+            failure_output="""
+2026-08-27T08:12:03Z ERROR checkout-api upstream request failed
+GET /api/checkout
+HTTP/1.1 503 Service Unavailable
+trace_id=req-demo-42
+timeout after 5s
+""",
+            verification_output=(
+                "GET /api/checkout\nHTTP/1.1 200 OK\nhealth check passed"
+            ),
+        )
+    )
+
+    assert report.incident.domain == IncidentDomain.API
+    assert report.incident.severity == IncidentSeverity.ERROR
+    assert {signal.kind for signal in report.incident.signals} >= {
+        "http_status",
+        "trace_context",
+        "timeout",
+    }
+    assert report.verification.status == VerificationStatus.VERIFIED
+    assert report.redaction_count == 1
+    assert "req-demo-42" not in report.markdown
+    assert "First-response playbook" in report.markdown
+
+
+def test_container_resource_failure_is_critical(tmp_path: Path) -> None:
+    settings = Settings(
+        allow_local_execution=False,
+        allow_local_sources=False,
+        timeout_seconds=30,
+        max_output_bytes=50_000,
+        work_root=tmp_path / "work",
+    )
+
+    report = AnalysisPipeline(settings).run(
+        AnalysisRequest(failure_output="pod/orders-7f9 terminated: OOMKilled")
+    )
+
+    assert report.incident.domain == IncidentDomain.CONTAINER
+    assert report.incident.severity == IncidentSeverity.CRITICAL
+    assert report.failures[0].exception_type == "ContainerError"
 
 
 def test_verify_cli_is_a_machine_checkable_gate(tmp_path: Path) -> None:

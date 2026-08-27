@@ -23,7 +23,8 @@ class SecretRedactor:
         re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b"),
         re.compile(
             r"(?im)(?P<prefix>\b(?:api[_-]?key|access[_-]?token|auth[_-]?token|password|passwd|"
-            r"client[_-]?secret|secret|token)\b\s*[:=]\s*)(?P<quote>['\"]?)"
+            r"client[_-]?secret|secret|token|trace[_-]?id|request[_-]?id|"
+            r"correlation[_-]?id)\b\s*[:=]\s*)(?P<quote>['\"]?)"
             r"(?P<value>[^\s'\",;]{4,})(?P=quote)"
         ),
     )

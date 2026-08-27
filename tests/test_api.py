@@ -33,7 +33,7 @@ def test_homepage_is_served() -> None:
     response = request("/")
 
     assert response.status_code == 200
-    assert "From noisy logs" in response.text
+    assert "Any software issue" in response.text
 
 
 def test_task_metadata_is_sanitized_before_storage() -> None:

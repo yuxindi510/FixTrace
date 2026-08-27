@@ -14,6 +14,7 @@ from fixtrace.core.models import (
 )
 from fixtrace.services.diagnoser import EvidenceDiagnoser
 from fixtrace.services.failure_parser import UniversalFailureParser
+from fixtrace.services.incident_classifier import IncidentClassifier
 from fixtrace.services.redactor import SecretRedactor
 from fixtrace.services.report import ReportRenderer
 from fixtrace.services.repository import RepositoryManager
@@ -56,6 +57,7 @@ class AnalysisPipeline:
         self.parser = UniversalFailureParser()
         self.redactor = SecretRedactor()
         self.verifier = RepairVerifier(self.parser)
+        self.incidents = IncidentClassifier()
         self.diagnoser = EvidenceDiagnoser()
         self.renderer = ReportRenderer()
 
@@ -129,6 +131,8 @@ class AnalysisPipeline:
                 log_format=log_format,
                 redaction_count=redaction_count,
             )
+            incident = self.incidents.classify(output, log_format, failures)
+            evidence.append(self.diagnoser.incident_evidence(incident))
             hypotheses = self.diagnoser.build_hypotheses(failures, command_result)
             self._stage(
                 emit,
@@ -167,6 +171,7 @@ class AnalysisPipeline:
                 failures=failures,
                 evidence=evidence,
                 hypotheses=hypotheses,
+                incident=incident,
                 verification=verification,
             )
             self._stage(emit, StageName.REPORT, "completed", "Analysis report is ready.")

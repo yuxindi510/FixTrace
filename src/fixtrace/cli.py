@@ -13,7 +13,7 @@ from fixtrace.core.pipeline import AnalysisPipeline
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="fixtrace",
-        description="Fingerprint software failures and prove fixes from before/after evidence.",
+        description="Triage software incidents and prove recovery from before/after evidence.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
     analyze = subparsers.add_parser("analyze", help="Analyze a failure log and optional repository")

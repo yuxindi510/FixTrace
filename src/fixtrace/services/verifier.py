@@ -14,6 +14,12 @@ _PASS_SIGNALS = (
     re.compile(r"\bBUILD SUCCESS(?:FUL)?\b", re.I),
     re.compile(r"^ok\s+\S+", re.M),
     re.compile(r"\b0\s+failed\b", re.I),
+    re.compile(r"HTTP/\d(?:\.\d)?\s+2\d\d\b", re.I),
+    re.compile(r"status(?:[_ ]code)?\s*[:=]\s*2\d\d\b", re.I),
+    re.compile(
+        r"\b(?:health check passed|status healthy|request succeeded|startup complete)\b",
+        re.I,
+    ),
 )
 
 

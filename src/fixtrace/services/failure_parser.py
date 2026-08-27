@@ -37,6 +37,39 @@ _COMPILER_ERROR = re.compile(
     r"\s*:?\s*(?:error(?:\s+[A-Z]+\d+)?:\s*)?(?P<detail>.+)$",
     re.I | re.M,
 )
+_HTTP_FAILURE = re.compile(
+    r"(?:HTTP/\d(?:\.\d)?\s+|status(?:[_ ]code)?\s*[:=]\s*|response\s+)"
+    r"(?P<status>[45]\d\d)\b(?P<detail>[^\n]*)",
+    re.I,
+)
+_HTTP_REQUEST = re.compile(r"\b(?P<method>GET|POST|PUT|PATCH|DELETE|HEAD)\s+(?P<path>/\S*)", re.I)
+_NETWORK_FAILURE = re.compile(
+    r"(?P<detail>ECONNREFUSED[^\n]*|ENOTFOUND[^\n]*|ConnectionRefusedError[^\n]*|"
+    r"connection reset by peer[^\n]*|upstream timed out[^\n]*|DNS lookup failed[^\n]*)",
+    re.I,
+)
+_CONTAINER_FAILURE = re.compile(
+    r"(?P<reason>OOMKilled|CrashLoopBackOff|ImagePullBackOff|CreateContainerConfigError|"
+    r"Evicted|Back-off restarting failed container)",
+    re.I,
+)
+_DATABASE_FAILURE = re.compile(
+    r"(?P<detail>SQLSTATE(?:\[[A-Z0-9]+\]|\s+[A-Z0-9]+)[^\n]*|deadlock detected[^\n]*|"
+    r"too many connections[^\n]*|connection pool (?:exhausted|timeout)[^\n]*|"
+    r"database is locked[^\n]*|could not connect to (?:database|server)[^\n]*)",
+    re.I,
+)
+_DEPENDENCY_FAILURE = re.compile(
+    r"(?P<detail>npm ERR![^\n]*|No matching distribution found[^\n]*|"
+    r"Could not find a version that satisfies[^\n]*|ResolutionImpossible[^\n]*|"
+    r"ModuleNotFoundError:[^\n]*|Cannot find module[^\n]*)",
+    re.I,
+)
+_APPLICATION_FAILURE = re.compile(
+    r"^(?:\d{4}-\d{2}-\d{2}[T ][^\s]+\s+)?(?:\[[^\]]+\]\s*)?"
+    r"(?:ERROR|FATAL|PANIC|CRITICAL)\b\s*[:\-]?\s*(?P<detail>.+)$",
+    re.I | re.M,
+)
 
 
 def failure_fingerprint(failure: Failure) -> str:
@@ -44,13 +77,29 @@ def failure_fingerprint(failure: Failure) -> str:
 
     test_id = re.sub(r"\b\d+\b", "#", failure.test_id.lower())
     summary = failure.summary.lower()
+    signature_codes = ",".join(
+        match.group(0).lower()
+        for match in re.finditer(
+            r"\b(?:HTTP\s+[45]\d\d|SQLSTATE(?:\[[A-Z0-9]+\]|\s+[A-Z0-9]+)|"
+            r"ERR_[A-Z0-9_]+|TS\d{3,5}|OOMKilled|CrashLoopBackOff|ImagePullBackOff)\b",
+            failure.summary,
+            re.I,
+        )
+    )
     summary = re.sub(r"0x[0-9a-f]+", "<hex>", summary)
     summary = re.sub(r"\b\d+(?:\.\d+)?\b", "<n>", summary)
     summary = re.sub(r"(['\"]).*?\1", "<value>", summary)
     summary = re.sub(r"\s+", " ", summary).strip()
     file_name = PurePath((failure.file or "unknown").replace("\\", "/")).name.lower()
     material = "|".join(
-        (failure.framework, test_id, failure.exception_type or "", file_name, summary)
+        (
+            failure.framework,
+            test_id,
+            failure.exception_type or "",
+            signature_codes,
+            file_name,
+            summary,
+        )
     )
     return f"ft-{hashlib.sha256(material.encode()).hexdigest()[:12]}"
 
@@ -73,10 +122,24 @@ class UniversalFailureParser:
             "BUILD FAILURE" in output or "Tests run:" in output or "<<< FAILURE!" in output
         ):
             return "maven/gradle"
+        if _CONTAINER_FAILURE.search(output) or re.search(
+            r"\b(?:kubernetes|kubectl|containerd|docker daemon)\b", output, re.I
+        ):
+            return "container/platform"
+        if _DATABASE_FAILURE.search(output) or re.search(
+            r"\b(?:psycopg|postgresql|mysql|sqlite|oracle)\b", output, re.I
+        ):
+            return "database"
+        if _HTTP_FAILURE.search(output) or _NETWORK_FAILURE.search(output):
+            return "http/api"
+        if _DEPENDENCY_FAILURE.search(output):
+            return "dependency"
         if _COMPILER_ERROR.search(output):
             return "compiler"
         if _EXCEPTION.search(output):
             return "runtime"
+        if _APPLICATION_FAILURE.search(output):
+            return "application"
         return "generic"
 
     def parse(self, output: str) -> list[Failure]:
@@ -92,8 +155,50 @@ class UniversalFailureParser:
             failures = self._parse_go(output)
         elif log_format == "maven/gradle":
             failures = self._parse_java(output)
+        elif log_format == "http/api":
+            failures = self._parse_http(output)
+        elif log_format == "container/platform":
+            failures = self._parse_signal(
+                output,
+                _CONTAINER_FAILURE,
+                framework=log_format,
+                exception_type="ContainerError",
+            )
+        elif log_format == "database":
+            failures = self._parse_signal(
+                output,
+                _DATABASE_FAILURE,
+                framework=log_format,
+                exception_type="DatabaseError",
+            )
+        elif log_format == "dependency":
+            failures = self._parse_signal(
+                output,
+                _DEPENDENCY_FAILURE,
+                framework=log_format,
+                exception_type="DependencyError",
+            )
+        elif log_format == "application":
+            failures = self._parse_signal(
+                output,
+                _APPLICATION_FAILURE,
+                framework=log_format,
+                exception_type="ApplicationError",
+            )
         else:
             failures = self._parse_generic(output, log_format)
+        if not failures and _APPLICATION_FAILURE.search(output):
+            exception_type = {
+                "container/platform": "ContainerError",
+                "database": "DatabaseError",
+                "dependency": "DependencyError",
+            }.get(log_format, "ApplicationError")
+            failures = self._parse_signal(
+                output,
+                _APPLICATION_FAILURE,
+                framework=log_format,
+                exception_type=exception_type,
+            )
         return [
             failure.model_copy(update={"fingerprint": failure_fingerprint(failure)})
             for failure in failures
@@ -211,6 +316,57 @@ class UniversalFailureParser:
                 )
             ]
         return self._parse_exception_fallback(output, log_format)
+
+    @staticmethod
+    def _parse_http(output: str) -> list[Failure]:
+        match = _HTTP_FAILURE.search(output)
+        network_match = _NETWORK_FAILURE.search(output)
+        if not match and not network_match:
+            return []
+        request = _HTTP_REQUEST.search(output)
+        request_path = request.group("path").split("?", 1)[0] if request else ""
+        test_id = f"{request.group('method').upper()} {request_path}" if request else "http-request"
+        if match:
+            detail = match.group("detail").strip(" :-")
+            summary = f"HTTP {match.group('status')}"
+            if detail:
+                summary += f" {detail}"
+        else:
+            assert network_match is not None
+            summary = network_match.group("detail").strip()
+        return [
+            Failure(
+                test_id=test_id,
+                summary=summary[:500],
+                exception_type="HttpError",
+                framework="http/api",
+            )
+        ]
+
+    @staticmethod
+    def _parse_signal(
+        output: str,
+        pattern: re.Pattern[str],
+        *,
+        framework: str,
+        exception_type: str,
+    ) -> list[Failure]:
+        match = pattern.search(output)
+        if not match:
+            return []
+        detail = (
+            match.groupdict().get("detail")
+            or match.groupdict().get("reason")
+            or match.group(0)
+        )
+        return [
+            Failure(
+                test_id=f"{framework}-incident",
+                summary=detail.strip()[:500],
+                exception_type=exception_type,
+                framework=framework,
+            )
+        ]
 
     @staticmethod
     def _parse_exception_fallback(output: str, framework: str) -> list[Failure]:

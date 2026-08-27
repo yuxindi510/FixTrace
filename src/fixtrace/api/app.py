@@ -24,7 +24,7 @@ static_root = Path(__file__).resolve().parent.parent / "static"
 app = FastAPI(
     title="FixTrace",
     version=__version__,
-    description="Privacy-first failure intelligence and before/after repair verification.",
+    description="Privacy-first software incident triage and before/after verification.",
 )
 
 
@@ -61,7 +61,19 @@ def health() -> dict[str, object]:
         "version": __version__,
         "local_execution_enabled": settings.allow_local_execution,
         "local_sources_enabled": settings.allow_local_sources,
-        "log_formats": ["pytest", "jest/vitest", "go test", "maven/gradle", "generic"],
+        "log_formats": [
+            "pytest",
+            "jest/vitest",
+            "go test",
+            "maven/gradle",
+            "http/api",
+            "database",
+            "container/platform",
+            "dependency",
+            "application",
+            "generic",
+        ],
+        "incident_domains": 9,
         "repair_verification": True,
         "secret_redaction": True,
     }

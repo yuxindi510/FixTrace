@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>FixTrace — failure intelligence you can prove</title>
+  <title>FixTrace — software incident evidence you can prove</title>
   <style>
     :root {
       color-scheme: dark;
@@ -115,11 +115,11 @@
     </header>
     <section class="hero">
       <div>
-        <div class="eyebrow">Privacy-first failure intelligence</div>
-        <h1>From noisy logs<br>to proof.</h1>
-        <p>Redact secrets, normalize failures, fingerprint recurring incidents, and compare before/after runs without sending your logs to an AI model.</p>
+        <div class="eyebrow">Privacy-first incident intelligence</div>
+        <h1>Any software issue.<br>One evidence trail.</h1>
+        <p>Triage tests, APIs, databases, containers, dependencies, builds, and application crashes—then prove recovery with before/after evidence.</p>
       </div>
-      <div class="metric"><strong>5 formats</strong><span>one deterministic evidence trail</span></div>
+      <div class="metric"><strong>9 domains</strong><span>one deterministic investigation flow</span></div>
     </section>
     <section class="grid">
       <article class="panel">
@@ -136,8 +136,8 @@
             <div class="hint">Remote code execution is disabled unless the server owner explicitly enables it.</div>
           </div>
           <div class="field">
-            <label for="failure">Before — failure output</label>
-            <textarea id="failure" required placeholder="Paste pytest, Jest/Vitest, Go test, Maven/Gradle, compiler, or runtime output"></textarea>
+            <label for="failure">Before — incident or failure log</label>
+            <textarea id="failure" required placeholder="Paste an API, database, container, dependency, build, test, or application log"></textarea>
           </div>
           <div class="field">
             <label for="verification">After — rerun output (optional)</label>
@@ -153,9 +153,10 @@
         <div class="panel-head"><h2>Investigation workspace</h2><span class="index" id="task-id">02 / READY</span></div>
         <div class="empty" id="empty"><div><div class="empty-glyph">⌁</div><strong>No investigation running</strong><p>Submit a repository and failure output to build an evidence trail.</p></div></div>
         <div class="results" id="results">
-          <div class="summary"><div><span>Status</span><strong id="result-status">—</strong></div><div><span>Format</span><strong id="result-format">—</strong></div><div><span>Verdict</span><strong id="result-verdict">—</strong></div><div><span>Verification</span><strong id="result-verification">—</strong></div></div>
+          <div class="summary"><div><span>Status</span><strong id="result-status">—</strong></div><div><span>Domain</span><strong id="result-domain">—</strong></div><div><span>Verdict</span><strong id="result-verdict">—</strong></div><div><span>Verification</span><strong id="result-verification">—</strong></div></div>
           <div class="content">
             <div class="section-title">Pipeline</div><div class="timeline" id="timeline"></div>
+            <div class="section-title">Incident triage</div><div class="cards" id="incident"></div>
             <div class="section-title">Repair verification</div><div class="cards" id="verification-result"></div>
             <div class="section-title">Root-cause hypotheses</div><div class="cards" id="hypotheses"></div>
             <div class="section-title">Evidence ledger</div><div class="cards" id="evidence"></div>
@@ -178,8 +179,8 @@
     $('demo').addEventListener('click', () => {
       $('repository').value = '';
       $('mode').value = 'inspect';
-      $('failure').value = `FAIL src/price.test.ts\n  ● applies member discount\n\n    Expected: 80\n    Received: 100\n\n      at src/price.test.ts:12:18\n\nTests: 1 failed, 4 passed`;
-      $('verification').value = `PASS src/price.test.ts\nTests: 5 passed, 5 total`;
+      $('failure').value = `2026-08-27T08:12:03Z ERROR checkout-api upstream request failed\nGET /api/checkout\nHTTP/1.1 503 Service Unavailable\ntrace_id=req-demo-42\ntimeout after 5s`;
+      $('verification').value = `2026-08-27T08:18:11Z INFO checkout-api request succeeded\nGET /api/checkout\nHTTP/1.1 200 OK\nhealth check passed`;
     });
 
     $('analysis-form').addEventListener('submit', async (event) => {
@@ -210,10 +211,13 @@
       if (task.error) { showError(task.error); return; }
       if (!task.report) return;
       const report = task.report;
-      $('result-format').textContent = report.log_format;
+      $('result-domain').textContent = report.incident.domain;
       $('result-verdict').textContent = report.verdict;
       $('result-verification').textContent = report.verification.status;
       $('result-verification').className = report.verification.status === 'verified' ? 'verified' : (report.verification.status === 'failed' ? 'error' : '');
+      const signals = report.incident.signals.map(item => `${escapeHtml(item.label)}: ${escapeHtml(item.detail)}`).join(' · ') || 'Add surrounding context to extract more signals.';
+      const actions = report.incident.playbook.map((item, index) => `${index + 1}. ${escapeHtml(item)}`).join('<br>');
+      $('incident').innerHTML = `<div class="card"><div class="card-top"><strong>${escapeHtml(report.incident.title)}</strong><small>${escapeHtml(report.incident.severity)}</small></div><p>${signals}<br><br>${actions}</p></div>`;
       $('verification-result').innerHTML = `<div class="card"><div class="card-top"><strong>${escapeHtml(report.verification.status)}</strong><small>${report.verification.pass_signal ? 'PASS SIGNAL' : 'EVIDENCE CHECK'}</small></div><p>${escapeHtml(report.verification.summary)}</p></div>`;
       $('hypotheses').innerHTML = report.hypotheses.map(item => `<div class="card"><div class="card-top"><strong>${escapeHtml(item.title)}</strong><small>${Math.round(item.confidence*100)}%</small></div><p>${escapeHtml(item.explanation)} Next: ${escapeHtml(item.next_action)}</p></div>`).join('') || '<div class="card"><p>No hypothesis yet. Supply a complete failure trace.</p></div>';
       $('evidence').innerHTML = report.evidence.map(item => `<div class="card"><div class="card-top"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.id)}</small></div><p>${escapeHtml(item.detail)}</p></div>`).join('');

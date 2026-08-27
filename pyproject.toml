@@ -4,13 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "fixtrace"
-version = "0.2.0"
-description = "Privacy-first failure fingerprinting and repair verification"
+version = "0.3.0"
+description = "Privacy-first software incident triage and repair verification"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
 authors = [{ name = "FixTrace contributors" }]
-keywords = ["ci", "testing", "debugging", "failure-intelligence", "developer-tools"]
+keywords = ["incident-response", "debugging", "observability", "failure-intelligence", "devtools"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "License :: OSI Approved :: MIT License",
