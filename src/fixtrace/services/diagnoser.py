@@ -2,26 +2,69 @@
 
 from __future__ import annotations
 
-from fixtrace.core.models import CommandResult, Evidence, Failure, Hypothesis, StackProfile
+from fixtrace.core.models import (
+    CommandResult,
+    Evidence,
+    Failure,
+    Hypothesis,
+    StackProfile,
+    VerificationResult,
+)
 
 
 class EvidenceDiagnoser:
+    @staticmethod
+    def verification_evidence(verification: VerificationResult) -> Evidence:
+        return Evidence(
+            id="ev-verification",
+            kind="verification",
+            title=f"Repair verification: {verification.status.value}",
+            detail=verification.summary,
+            source="before/after failure fingerprint comparison",
+            confidence=1.0 if verification.status.value in {"verified", "failed"} else 0.65,
+        )
+
     def build_evidence(
         self,
         stack: StackProfile,
         failures: list[Failure],
         command_result: CommandResult | None,
+        *,
+        log_format: str,
+        redaction_count: int,
     ) -> list[Evidence]:
         evidence = [
             Evidence(
-                id="ev-stack",
-                kind="stack",
-                title=f"Detected {stack.primary_language} project",
-                detail=self._stack_detail(stack),
-                source="repository manifests and file extensions",
-                confidence=stack.confidence,
+                id="ev-format",
+                kind="log_format",
+                title=f"Detected {log_format} output",
+                detail="The parser was selected from deterministic log signatures.",
+                source="supplied or reproduced output",
+                confidence=0.95 if log_format != "generic" else 0.5,
             )
         ]
+        if stack.primary_language != "unknown":
+            evidence.append(
+                Evidence(
+                    id="ev-stack",
+                    kind="stack",
+                    title=f"Detected {stack.primary_language} project",
+                    detail=self._stack_detail(stack),
+                    source="repository manifests and file extensions",
+                    confidence=stack.confidence,
+                )
+            )
+        if redaction_count:
+            evidence.append(
+                Evidence(
+                    id="ev-privacy",
+                    kind="privacy",
+                    title=f"Redacted {redaction_count} potential secret(s)",
+                    detail="Sensitive values were replaced before parsing and reporting.",
+                    source="local privacy filter",
+                    confidence=1.0,
+                )
+            )
         if command_result:
             evidence.append(
                 Evidence(
@@ -43,8 +86,8 @@ class EvidenceDiagnoser:
                     id=f"ev-failure-{index}",
                     kind="test_failure",
                     title=failure.test_id,
-                    detail=failure.summary,
-                    source="pytest output",
+                    detail=f"{failure.summary} Fingerprint: {failure.fingerprint}.",
+                    source=f"{failure.framework} output",
                     confidence=0.95,
                 )
             )
@@ -58,7 +101,7 @@ class EvidenceDiagnoser:
                         detail=(
                             "The location is linked from the failing test identifier or traceback."
                         ),
-                        source="pytest traceback",
+                        source=f"{failure.framework} traceback or source location",
                         confidence=0.85 if failure.line else 0.7,
                     )
                 )
@@ -145,6 +188,14 @@ class EvidenceDiagnoser:
                 "Python could not parse a source or test module.",
                 "Inspect the reported line and verify the project's supported Python versions.",
                 0.96,
+            )
+        if failure_type == "BuildError":
+            return (
+                "build",
+                "Build or compiler contract failed",
+                "A compiler or build tool rejected a source location before runtime.",
+                "Inspect the normalized source location and reproduce with the same toolchain.",
+                0.88,
             )
         if failure_type == "AssertionError" or "assert" in summary:
             return (

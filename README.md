@@ -1,32 +1,52 @@
 # FixTrace
 
-**Evidence-driven CI failure reproduction and verified repair reports.**
+**Privacy-first failure intelligence and repair verification.**
 
-FixTrace turns a failed test run into a structured investigation: repository intake, stack
-detection, safe-by-default reproduction, normalized failures, an evidence ledger, root-cause
-hypotheses, and a portable Markdown report.
+FixTrace turns noisy test, build, deployment, and runtime output into a deterministic evidence
+record. It redacts likely secrets, detects the log format, normalizes failures, creates stable
+fingerprints, links root-cause hypotheses to evidence, and compares before/after runs to decide
+whether a repair is actually proven.
 
-It is deliberately different from a general coding agent. The MVP does not claim a repair is
-correct because a model produced a patch; it records what failed, what evidence supports each
-hypothesis, and what still needs to pass before a repair is verified.
+No repository or AI API is required for log-only analysis.
 
 ![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB)
 ![FastAPI](https://img.shields.io/badge/API-FastAPI-009688)
 ![License](https://img.shields.io/badge/license-MIT-75f0bd)
 
-## What works in v0.1
+## Why use this instead of only asking a coding agent?
 
-- Inspect an existing pytest/CI failure without executing repository code.
-- Accept an existing local directory or a public GitHub HTTPS URL.
-- Detect languages, manifests, frameworks, and the supported test runner.
-- Parse pytest summaries, exceptions, and source locations.
-- Build evidence-linked, confidence-scored root-cause hypotheses.
+Coding agents such as Codex are excellent interactive problem solvers. FixTrace handles a
+different part of the workflow: repeatable failure intake and machine-checkable verification.
+
+| Coding agent | FixTrace |
+|---|---|
+| Interactive reasoning and code changes | Unattended, deterministic log processing |
+| Answers one conversation | Produces portable evidence and stable fingerprints |
+| Context depends on the prompt | Applies the same rules in local scripts and CI |
+| Can propose a plausible repair | Requires before/after evidence before saying “verified” |
+| May use a hosted model | Core analysis runs locally without sending logs to a model |
+
+They work well together: FixTrace prepares sanitized, structured evidence; a developer or coding
+agent investigates and changes the code; FixTrace then acts as the verification gate.
+
+## What works in v0.2
+
+- Analyze a pasted log without cloning or executing a repository.
+- Detect pytest, Jest/Vitest, Go test, Maven/Gradle, compiler, and generic runtime output.
+- Redact common tokens, API keys, passwords, bearer credentials, and private keys before storage.
+- Normalize failures across ecosystems and assign stable `ft-…` fingerprints.
+- Compare before/after output conservatively:
+  - `verified`: original fingerprints disappeared and an explicit pass signal exists;
+  - `failed`: an original fingerprint remains;
+  - `inconclusive`: the original disappeared but the rerun is ambiguous or has new failures.
+- Inspect a local directory or public GitHub repository for additional stack context.
 - Opt in to pytest reproduction in an isolated copy of a trusted local repository.
-- Use the CLI or asynchronous FastAPI dashboard.
-- Export a standalone Markdown investigation report.
+- Use the CLI, asynchronous FastAPI API, or browser dashboard.
+- Export a standalone Markdown evidence report or full JSON result.
+- Use `fixtrace verify` as a CI gate: exit code `0` means verified; any other result exits `1`.
 
-Patch generation and before/after patch verification are intentionally marked as pending in v0.1.
-They are the next product milestone, not a result the application fabricates.
+FixTrace uses deterministic rules. A confidence score describes the strength of a rule match; it
+is not a claim that the root cause has been proven.
 
 ## Quick start
 
@@ -37,25 +57,100 @@ pip install -e '.[dev]'
 uvicorn fixtrace.api.app:app --reload --port 8080
 ```
 
-Open <http://127.0.0.1:8080>.
+Open <http://127.0.0.1:8080> and choose **Load demo** to run a repository-free before/after
+verification.
 
-Inspect previously captured CI output:
+### Analyze only a log
 
 ```bash
-fixtrace analyze /path/to/repository \
-  --failure-file /path/to/pytest-output.txt \
+fixtrace analyze \
+  --failure-file artifacts/failing-run.txt \
   --output reports/investigation.md
 ```
 
-Reproduce tests for a repository you trust:
+### Add repository context
+
+```bash
+fixtrace analyze /path/to/repository \
+  --failure-file artifacts/failing-run.txt \
+  --output reports/investigation.md
+```
+
+### Prove a repair
+
+```bash
+fixtrace verify \
+  --before artifacts/failing-run.txt \
+  --after artifacts/after-fix-run.txt \
+  --output reports/verification.md
+```
+
+The command exits successfully only when the original failure fingerprints are absent and the
+after-fix output contains a recognized success signal. This makes it suitable for a CI step or a
+pre-merge quality gate.
+
+### Reproduce trusted pytest projects
 
 ```bash
 fixtrace analyze examples/python_buggy --execute
 ```
 
-The CLI's `--execute` flag is an explicit trust decision. The Web API requires both
+`--execute` is an explicit trust decision. The Web API requires both
 `FIXTRACE_ALLOW_LOCAL_SOURCES=1` and `FIXTRACE_ALLOW_LOCAL_EXECUTION=1` before it accepts local
 paths and executes pytest.
+
+## The evidence pipeline
+
+```text
+intake → checkout/context → detect → reproduce/ingest → diagnose → verify → report
+```
+
+The important product boundary is between observation and inference:
+
+- failures contain normalized facts and a stable fingerprint;
+- evidence records where each fact came from;
+- hypotheses cite evidence IDs and never silently become facts;
+- verification compares before/after fingerprints and requires an explicit pass signal.
+
+Likely credentials are replaced with `[REDACTED]` before parsing and reporting. The built-in
+redactor is intentionally conservative and is not a substitute for a dedicated secret scanner.
+
+## API
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| `GET` | `/api/health` | Capabilities and execution policy |
+| `POST` | `/api/analyses` | Queue a log analysis or repository investigation |
+| `GET` | `/api/analyses` | List investigations |
+| `GET` | `/api/analyses/{id}` | Poll task state and structured results |
+| `GET` | `/api/analyses/{id}/report` | Download the Markdown report |
+
+Repository-free verification request:
+
+```json
+{
+  "repository": null,
+  "execution_mode": "inspect",
+  "failure_output": "FAIL src/price.test.ts\nExpected: 80\nReceived: 100",
+  "verification_output": "PASS src/price.test.ts\nTests: 5 passed, 5 total"
+}
+```
+
+## Security model
+
+Repository tests execute repository code, so FixTrace uses conservative defaults:
+
+- Log-only analysis does not execute repository code.
+- Web requests cannot access server-local paths or execute tests by default.
+- GitHub sources must match `https://github.com/owner/repository`.
+- Local execution works on a copied workspace and receives a minimal environment without host API
+  keys or tokens.
+- Command selection is not user-controlled; local execution currently invokes detected pytest.
+- Output is size-capped and execution has a timeout.
+- Common credential forms are redacted before results enter a report.
+
+Local execution is not a complete sandbox and may have network access. Only use it for code you
+trust. Run untrusted repositories in a disposable VM. See [SECURITY.md](SECURITY.md).
 
 ## Docker
 
@@ -64,53 +159,7 @@ docker compose up --build
 ```
 
 The supplied container is read-only, drops privilege escalation, and disables local sources and
-test execution. It can inspect supplied CI output for public GitHub repositories. A dedicated
-network-isolated runner image is planned before Web-triggered execution is recommended.
-
-## Analysis pipeline
-
-```text
-intake → checkout → detect → reproduce → diagnose → verify → report
-```
-
-Each stage emits a timestamped event. Hypotheses reference evidence IDs so reviewers can separate
-observations from inference.
-
-## API
-
-| Method | Endpoint | Purpose |
-|---|---|---|
-| `GET` | `/api/health` | Service capabilities and execution policy |
-| `POST` | `/api/analyses` | Queue an investigation |
-| `GET` | `/api/analyses` | List investigations |
-| `GET` | `/api/analyses/{id}` | Poll task state and results |
-| `GET` | `/api/analyses/{id}/report` | Download the Markdown report |
-
-Example request:
-
-```json
-{
-  "repository": "https://github.com/owner/repository",
-  "execution_mode": "inspect",
-  "failure_output": "FAILED tests/test_total.py::test_discount - AssertionError: assert 12 == 10"
-}
-```
-
-## Security model
-
-Repository tests execute repository code. FixTrace therefore uses these defaults:
-
-- Web requests cannot access server-local paths.
-- Web requests cannot execute tests.
-- GitHub sources must match `https://github.com/owner/repository`.
-- Local execution works on a copied workspace and receives a minimal environment without host API
-  keys or tokens.
-- Command selection is not user-controlled; v0.1 only invokes detected pytest.
-- Output is size-capped and execution has a timeout.
-
-Local execution is still not a complete sandbox and may have network access. Only use it for code
-you trust. Run untrusted repositories in a disposable VM until the container runner milestone is
-complete. See [SECURITY.md](SECURITY.md).
+test execution. It supports safe log-only analysis and public repository inspection.
 
 ## Development
 
@@ -120,21 +169,18 @@ ruff check src tests
 pytest
 ```
 
-The deliberately broken project in `examples/python_buggy` is excluded from the repository's own
-test suite and exists only to demonstrate failure reproduction.
+The deliberately broken project in `examples/python_buggy` is excluded from FixTrace's own test
+suite and exists only to demonstrate failure reproduction.
 
 ## Roadmap
 
-- Containerized, network-disabled test runners.
-- GitHub Actions workflow-log and artifact ingestion.
-- Candidate patch input and before/after worktree verification.
-- Python dependency environment reconstruction.
-- JavaScript, Go, and Java test adapters.
+- Persistent fingerprint history and recurring-incident trends.
+- GitHub Actions log and artifact ingestion.
+- Containerized, network-disabled reproduction workers.
 - SARIF and GitHub Check output.
-- Optional LLM hypothesis enrichment with strict evidence citations.
-- SQLite persistence and task resumption.
+- More adapters for deployment platforms and application logs.
+- Optional AI enrichment that can only cite collected evidence.
 
 ## License
 
 MIT. See [LICENSE](LICENSE).
-

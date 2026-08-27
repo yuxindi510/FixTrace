@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 def utc_now() -> datetime:
@@ -23,6 +23,13 @@ class TaskStatus(StrEnum):
     RUNNING = "running"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
+
+
+class VerificationStatus(StrEnum):
+    PENDING = "pending"
+    VERIFIED = "verified"
+    FAILED = "failed"
+    INCONCLUSIVE = "inconclusive"
 
 
 class StageName(StrEnum):
@@ -43,17 +50,31 @@ class StageEvent(BaseModel):
 
 
 class AnalysisRequest(BaseModel):
-    repository: str = Field(
+    repository: str | None = Field(
+        default=None,
         min_length=1,
         max_length=500,
-        description="Local directory or public https://github.com/owner/repository URL.",
+        description="Optional local directory or public GitHub repository URL.",
     )
     failure_output: str = Field(
         default="",
         max_length=200_000,
-        description="Optional pasted pytest/CI failure output for inspect-only analysis.",
+        description="Failure output from a test, build, deployment, or application run.",
+    )
+    verification_output: str = Field(
+        default="",
+        max_length=200_000,
+        description="Optional after-fix output used to prove whether the failure was resolved.",
     )
     execution_mode: ExecutionMode = ExecutionMode.INSPECT
+
+    @model_validator(mode="after")
+    def require_repository_or_failure(self) -> Self:
+        if not self.repository and not self.failure_output.strip():
+            raise ValueError("Provide a repository, failure output, or both.")
+        if self.execution_mode == ExecutionMode.LOCAL and not self.repository:
+            raise ValueError("Local execution requires a repository.")
+        return self
 
 
 class StackProfile(BaseModel):
@@ -85,11 +106,22 @@ class Failure(BaseModel):
     file: str | None = None
     line: int | None = None
     exception_type: str | None = None
+    framework: str = "generic"
+    fingerprint: str = ""
 
 
 class Evidence(BaseModel):
     id: str
-    kind: Literal["stack", "test_failure", "source_location", "runtime", "constraint"]
+    kind: Literal[
+        "stack",
+        "test_failure",
+        "source_location",
+        "runtime",
+        "constraint",
+        "log_format",
+        "privacy",
+        "verification",
+    ]
     title: str
     detail: str
     source: str
@@ -105,15 +137,29 @@ class Hypothesis(BaseModel):
     next_action: str
 
 
+class VerificationResult(BaseModel):
+    status: VerificationStatus = VerificationStatus.PENDING
+    summary: str = "No after-fix output was supplied."
+    pass_signal: bool = False
+    before_fingerprints: list[str] = Field(default_factory=list)
+    after_fingerprints: list[str] = Field(default_factory=list)
+    resolved_fingerprints: list[str] = Field(default_factory=list)
+    remaining_fingerprints: list[str] = Field(default_factory=list)
+    new_fingerprints: list[str] = Field(default_factory=list)
+
+
 class AnalysisReport(BaseModel):
     repository: str
-    source_kind: Literal["local", "github"]
+    source_kind: Literal["local", "github", "log"]
     stack: StackProfile
     execution_mode: ExecutionMode
+    log_format: str = "generic"
+    redaction_count: int = 0
     command_result: CommandResult | None = None
     failures: list[Failure] = Field(default_factory=list)
     evidence: list[Evidence] = Field(default_factory=list)
     hypotheses: list[Hypothesis] = Field(default_factory=list)
+    verification: VerificationResult = Field(default_factory=VerificationResult)
     verdict: str
     markdown: str
     created_at: datetime = Field(default_factory=utc_now)

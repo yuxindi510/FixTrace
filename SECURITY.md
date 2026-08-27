@@ -19,11 +19,12 @@ runner is available.
 
 ## Secrets
 
-Never paste secrets into CI output or commit a local `.env`. Reports can contain test names and
-exception summaries; review them before publishing.
+FixTrace applies a local, high-confidence redaction pass before parsing and reporting logs. This is
+a safety net, not a complete secret scanner: unusual credential formats and sensitive business
+data may remain. Avoid pasting secrets, never commit a local `.env`, and review reports before
+publishing them.
 
 ## Reporting a vulnerability
 
 Open a private security advisory in the GitHub repository rather than a public issue. Include a
 minimal reproduction, affected version, and expected impact. Do not include real credentials.
-

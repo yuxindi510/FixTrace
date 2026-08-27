@@ -4,13 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "fixtrace"
-version = "0.1.0"
-description = "Evidence-driven CI failure reproduction and verified repair reports"
+version = "0.2.0"
+description = "Privacy-first failure fingerprinting and repair verification"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
 authors = [{ name = "FixTrace contributors" }]
-keywords = ["ci", "testing", "debugging", "developer-tools", "fastapi"]
+keywords = ["ci", "testing", "debugging", "failure-intelligence", "developer-tools"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "License :: OSI Approved :: MIT License",
@@ -48,4 +48,3 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
-

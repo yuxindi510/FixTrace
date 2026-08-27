@@ -38,7 +38,7 @@ class RepositorySourceError(ValueError):
 @dataclass(frozen=True, slots=True)
 class Checkout:
     path: Path
-    source_kind: Literal["local", "github"]
+    source_kind: Literal["local", "github", "log"]
     display_name: str
 
 
@@ -48,7 +48,14 @@ class RepositoryManager:
         self.allow_local_sources = allow_local_sources
 
     @contextmanager
-    def prepare(self, source: str, *, isolated: bool) -> Iterator[Checkout]:
+    def prepare(self, source: str | None, *, isolated: bool) -> Iterator[Checkout]:
+        if not source:
+            with self._temporary_directory() as temp:
+                destination = temp / "log-input"
+                destination.mkdir()
+                yield Checkout(destination, "log", "log-only analysis")
+                return
+
         local_path = Path(source).expanduser()
         if local_path.exists():
             if not self.allow_local_sources:

@@ -2,7 +2,8 @@ import asyncio
 
 import httpx
 
-from fixtrace.api.app import app
+from fixtrace.api.app import _safe_task_request, app
+from fixtrace.core.models import AnalysisRequest
 
 
 async def _request(path: str) -> httpx.Response:
@@ -32,4 +33,16 @@ def test_homepage_is_served() -> None:
     response = request("/")
 
     assert response.status_code == 200
-    assert "Don’t guess" in response.text
+    assert "From noisy logs" in response.text
+
+
+def test_task_metadata_is_sanitized_before_storage() -> None:
+    secret = "synthetic-api-secret-value"
+    request_model = AnalysisRequest(
+        failure_output=f"password={secret}\nRuntimeError: request failed"
+    )
+
+    sanitized = _safe_task_request(request_model)
+
+    assert secret not in sanitized.failure_output
+    assert "[REDACTED]" in sanitized.failure_output

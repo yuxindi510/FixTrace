@@ -13,11 +13,13 @@ from fixtrace.core.models import (
     StageName,
 )
 from fixtrace.services.diagnoser import EvidenceDiagnoser
-from fixtrace.services.failure_parser import PytestFailureParser
+from fixtrace.services.failure_parser import UniversalFailureParser
+from fixtrace.services.redactor import SecretRedactor
 from fixtrace.services.report import ReportRenderer
 from fixtrace.services.repository import RepositoryManager
 from fixtrace.services.stack_detector import StackDetector
 from fixtrace.services.test_runner import LocalTestRunner
+from fixtrace.services.verifier import RepairVerifier
 
 StageCallback = Callable[[StageEvent], None]
 
@@ -51,7 +53,9 @@ class AnalysisPipeline:
             timeout_seconds=self.settings.timeout_seconds,
             max_output_bytes=self.settings.max_output_bytes,
         )
-        self.parser = PytestFailureParser()
+        self.parser = UniversalFailureParser()
+        self.redactor = SecretRedactor()
+        self.verifier = RepairVerifier(self.parser)
         self.diagnoser = EvidenceDiagnoser()
         self.renderer = ReportRenderer()
 
@@ -85,9 +89,16 @@ class AnalysisPipeline:
             )
 
             command_result = None
+            redaction_count = 0
             if request.execution_mode == ExecutionMode.LOCAL:
                 self._stage(emit, StageName.REPRODUCE, "started", "Running trusted local pytest.")
                 command_result = self.runner.run(checkout.path, stack.test_command)
+                clean_stdout = self.redactor.redact(command_result.stdout)
+                clean_stderr = self.redactor.redact(command_result.stderr)
+                redaction_count += clean_stdout.count + clean_stderr.count
+                command_result = command_result.model_copy(
+                    update={"stdout": clean_stdout.text, "stderr": clean_stderr.text}
+                )
                 output = command_result.combined_output
                 self._stage(
                     emit,
@@ -96,17 +107,28 @@ class AnalysisPipeline:
                     f"Test process exited with code {command_result.exit_code}.",
                 )
             else:
-                output = request.failure_output
+                clean_failure = self.redactor.redact(request.failure_output)
+                output = clean_failure.text
+                redaction_count += clean_failure.count
                 message = (
-                    "Parsed supplied CI output without executing repository code."
+                    "Parsed supplied failure output without executing repository code."
                     if output.strip()
-                    else "No CI output supplied; repository inspection only."
+                    else "No failure output supplied; repository inspection only."
                 )
                 self._stage(emit, StageName.REPRODUCE, "skipped", message)
 
             self._stage(emit, StageName.DIAGNOSE, "started", "Building evidence ledger.")
+            log_format = self.parser.detect_format(output)
             failures = self.parser.parse(output)
-            evidence = self.diagnoser.build_evidence(stack, failures, command_result)
+            clean_verification = self.redactor.redact(request.verification_output)
+            redaction_count += clean_verification.count
+            evidence = self.diagnoser.build_evidence(
+                stack,
+                failures,
+                command_result,
+                log_format=log_format,
+                redaction_count=redaction_count,
+            )
             hypotheses = self.diagnoser.build_hypotheses(failures, command_result)
             self._stage(
                 emit,
@@ -115,22 +137,37 @@ class AnalysisPipeline:
                 f"Collected {len(evidence)} evidence items and {len(hypotheses)} hypotheses.",
             )
 
-            self._stage(
-                emit,
-                StageName.VERIFY,
-                "skipped",
-                "No candidate patch was supplied; baseline verification is pending.",
-            )
+            verification = self.verifier.verify(failures, clean_verification.text)
+            if request.verification_output.strip():
+                evidence.append(
+                    self.diagnoser.verification_evidence(verification)
+                )
+                self._stage(
+                    emit,
+                    StageName.VERIFY,
+                    "completed",
+                    f"Repair verification is {verification.status.value}.",
+                )
+            else:
+                self._stage(
+                    emit,
+                    StageName.VERIFY,
+                    "skipped",
+                    "No after-fix output was supplied; repair verification is pending.",
+                )
             self._stage(emit, StageName.REPORT, "started", "Rendering portable Markdown report.")
             report = self.renderer.render(
                 repository=checkout.display_name,
                 source_kind=checkout.source_kind,
                 stack=stack,
                 execution_mode=request.execution_mode,
+                log_format=log_format,
+                redaction_count=redaction_count,
                 command_result=command_result,
                 failures=failures,
                 evidence=evidence,
                 hypotheses=hypotheses,
+                verification=verification,
             )
             self._stage(emit, StageName.REPORT, "completed", "Analysis report is ready.")
             return report

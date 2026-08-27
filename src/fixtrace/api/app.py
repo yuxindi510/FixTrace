@@ -13,16 +13,18 @@ from fixtrace.core.config import Settings
 from fixtrace.core.models import AnalysisRequest, AnalysisTask, TaskStatus
 from fixtrace.core.pipeline import AnalysisPipeline
 from fixtrace.core.tasks import TaskNotFoundError, TaskStore
+from fixtrace.services.redactor import SecretRedactor
 
 settings = Settings.from_env()
 task_store = TaskStore()
+redactor = SecretRedactor()
 executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="fixtrace")
 static_root = Path(__file__).resolve().parent.parent / "static"
 
 app = FastAPI(
     title="FixTrace",
     version=__version__,
-    description="Evidence-driven CI failure reproduction and repair verification.",
+    description="Privacy-first failure intelligence and before/after repair verification.",
 )
 
 
@@ -37,18 +39,31 @@ def _run_task(task_id: str, request: AnalysisRequest) -> None:
     task_store.succeed(task_id, report)
 
 
+def _safe_task_request(request: AnalysisRequest) -> AnalysisRequest:
+    """Keep raw log content out of the task registry and API responses."""
+
+    failure = redactor.redact(request.failure_output)
+    verification = redactor.redact(request.verification_output)
+    return request.model_copy(
+        update={"failure_output": failure.text, "verification_output": verification.text}
+    )
+
+
 @app.get("/", include_in_schema=False)
 def index() -> FileResponse:
     return FileResponse(static_root / "index.html")
 
 
 @app.get("/api/health")
-def health() -> dict[str, str | bool]:
+def health() -> dict[str, object]:
     return {
         "status": "ok",
         "version": __version__,
         "local_execution_enabled": settings.allow_local_execution,
         "local_sources_enabled": settings.allow_local_sources,
+        "log_formats": ["pytest", "jest/vitest", "go test", "maven/gradle", "generic"],
+        "repair_verification": True,
+        "secret_redaction": True,
     }
 
 
@@ -58,7 +73,7 @@ def health() -> dict[str, str | bool]:
     status_code=status.HTTP_202_ACCEPTED,
 )
 def create_analysis(request: AnalysisRequest) -> AnalysisTask:
-    task = task_store.create(request)
+    task = task_store.create(_safe_task_request(request))
     executor.submit(_run_task, task.id, request)
     return task
 
